@@ -352,8 +352,9 @@ Dev 4's fuller treatment is [`docs/safety-and-limitations.md`](docs/safety-and-l
   **Those hashes were taken on a checkout with CRLF line endings**, so 13 of the 16 do
   not match the same source here; the manifest is provenance, not a checksum, and the
   trust gate normalises line endings for exactly that reason.
-  The repository is public (24 Oct); attribution and permission to publish are still to
-  be confirmed with Will ([#8](https://github.com/Prittstick22/axolotl/issues/8)).
+  Will wrote it with AI assistance and published it as part of this project. Attribution
+  and permission to publish were confirmed with him on 24 Oct: no licensing or publishing
+  issues ([#8](https://github.com/Prittstick22/axolotl/issues/8)).
 - **legacy_orders** — written for this project. A small order service whose pricing
   rule rounds per line before tax, which is the behaviour a naive rewrite breaks:
   77 of 300 single-line inputs diverge, and the fixture's own 12 tests all pass on a

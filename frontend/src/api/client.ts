@@ -10,15 +10,20 @@ import type {
   ApiErrorBody,
   Artefact,
   DemoFixture,
+  DependencyChanges,
+  DocsProse,
   GraphPayload,
   IndexStatus,
   MigrationPlan,
   MigrationTarget,
   ModuleDetail,
+  RepositoryDocs,
   RepositoryRecord,
   RunDiff,
+  RunDocs,
   RunEvent,
   RunReport,
+  RunSecurity,
   RunSummary,
   RuntimeInfo,
   SearchMode,
@@ -157,6 +162,26 @@ export function searchRepository(repoId: string, q: string, mode: SearchMode): P
   return apiFetch<SearchResults>(`${repo(repoId)}/search?${new URLSearchParams({ q, mode })}`);
 }
 
+/** GET /api/v1/runs/{run_id}/dependency-changes - legacy vs last accepted revision (#34). */
+export function getDependencyChanges(runId: string): Promise<DependencyChanges> {
+  return apiFetch<DependencyChanges>(`${run(runId)}/dependency-changes`);
+}
+
+/** GET /api/v1/repositories/{repo_id}/docs - the legacy code's documentation (#39). */
+export function getRepositoryDocs(repoId: string): Promise<RepositoryDocs> {
+  return apiFetch<RepositoryDocs>(`${repo(repoId)}/docs`);
+}
+
+/** POST /api/v1/repositories/{repo_id}/docs - 202; writes each module's purpose, one model call per module. */
+export function generateDocs(repoId: string): Promise<{ repository_id: string; prose: DocsProse }> {
+  return post(`${repo(repoId)}/docs`);
+}
+
+/** GET /api/v1/runs/{run_id}/docs - legacy and migrated side by side (#39). */
+export function getRunDocs(runId: string): Promise<RunDocs> {
+  return apiFetch<RunDocs>(`${run(runId)}/docs`);
+}
+
 const post = <T>(path: string, body?: unknown) =>
   apiFetch<T>(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}) });
 const plan = (planId: string) => `/plans/${encodeURIComponent(planId)}`;
@@ -198,9 +223,24 @@ export function listRunEvents(runId: string, afterSequence: number): Promise<Run
   return apiFetch<RunEvent[]>(`${run(runId)}/events?after_sequence=${afterSequence}`);
 }
 
+/** The whole journal: the events endpoint pages, at most 1000 at a time. */
+export async function listAllRunEvents(runId: string): Promise<RunEvent[]> {
+  const all: RunEvent[] = [];
+  for (;;) {
+    const page = await apiFetch<RunEvent[]>(`${run(runId)}/events?after_sequence=${all.at(-1)?.sequence ?? 0}&limit=1000`);
+    all.push(...page);
+    if (page.length < 1000) return all;
+  }
+}
+
 /** GET /api/v1/runs/{run_id}/report - 404 REPORT_NOT_READY until the worker writes it. */
 export function getReport(runId: string): Promise<RunReport> {
   return apiFetch<RunReport>(`${run(runId)}/report`);
+}
+
+/** GET /api/v1/runs/{run_id}/security - package and runtime checks for both revisions (#42). */
+export function getRunSecurity(runId: string): Promise<RunSecurity> {
+  return apiFetch<RunSecurity>(`${run(runId)}/security`);
 }
 
 export function listArtefacts(runId: string): Promise<Artefact[]> {

@@ -33,6 +33,8 @@ const RunScreen = lazy(() => import('@/screens/RunScreen'));
 const VerificationScreen = lazy(() => import('@/screens/VerificationScreen'));
 const SearchScreen = lazy(() => import('@/screens/SearchScreen'));
 const ChangesScreen = lazy(() => import('@/screens/ChangesScreen'));
+const DependenciesScreen = lazy(() => import('@/screens/DependenciesScreen'));
+const DocsScreen = lazy(() => import('@/screens/DocsScreen'));
 
 function Shell() {
   const repoId = useMatch('/repos/:repoId/*')?.params.repoId;
@@ -66,6 +68,8 @@ const TABS = [
   { label: 'Run', path: '/run', needsRun: true },
   { label: 'Report', path: '/report', needsRun: true },
   { label: 'Changes', path: '/changes', needsRun: true },
+  { label: 'Dependencies', path: '/dependencies', needsRun: true },
+  { label: 'Docs', path: '/docs' },
   { label: 'Search', path: '/search' },
 ];
 const TAB = 'flex items-center px-3 text-sm font-medium border-b-2 border-transparent -mb-px transition-colors';
@@ -134,6 +138,8 @@ export default function App() {
           <Route path="run/:unitId" element={<Suspense><VerificationScreen /></Suspense>} />
           <Route path="report" element={<ReportScreen />} />
           <Route path="changes" element={<Suspense><ChangesScreen /></Suspense>} />
+          <Route path="dependencies" element={<Suspense><DependenciesScreen /></Suspense>} />
+          <Route path="docs" element={<Suspense><DocsScreen /></Suspense>} />
           <Route path="search" element={<Suspense><SearchScreen /></Suspense>} />
         </Route>
         {UiPreview && <Route path="dev/ui" element={<Suspense><UiPreview /></Suspense>} />}

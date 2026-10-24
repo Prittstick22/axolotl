@@ -67,7 +67,15 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   }
 
   const text = await response.text();
-  const body: unknown = text ? JSON.parse(text) : null;
+  let body: unknown = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    // Not our API: a proxy or gateway page. An error status is reported below as HTTP_ERROR.
+    if (response.ok) {
+      throw new ApiError('HTTP_ERROR', 'The server replied with something that is not JSON', response.status, {});
+    }
+  }
 
   if (!response.ok) {
     if (isErrorEnvelope(body)) {

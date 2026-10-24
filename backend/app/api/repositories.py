@@ -7,6 +7,8 @@
   GET  /repositories/{repo_id}/graph                ?level=module&run_id=
   GET  /repositories/{repo_id}/modules/{module_id}
   GET  /repositories/{repo_id}/symbols/{symbol_id}
+  GET  /repositories/{repo_id}/security             legacy code alone (#42)
+  GET  /runs/{run_id}/security                      legacy vs migrated (#42)
 
 Uploaded archives are **static-analysis only**: they import with `executable=False`
 and can never be migrated (§0.5). Only the allowlisted demo fixture is executable.
@@ -233,3 +235,25 @@ async def get_runtime(repo_id: str) -> dict:
 
     await ingestion.get_repository(repo_id)
     return inspect_runtime(ingestion.snapshot_path(repo_id))
+
+
+@router.get("/repositories/{repo_id}/security")
+async def get_repository_security(repo_id: str) -> dict[str, Any]:
+    """Known-vulnerable declared packages and the Python 2 runtime note (#42).
+
+    Only package names and versions are sent to OSV (osv.dev), never code.
+    `packages.status` is `checked`, `no_packages`, `nothing_pinned` or `not_run`;
+    `not_run` means OSV could not be reached and is never a pass.
+    """
+    from app.analysis.security import repository_security
+
+    return await repository_security(repo_id)
+
+
+@router.get("/runs/{run_id}/security")
+async def get_run_security(run_id: str) -> dict[str, Any]:
+    """Legacy vs the run's last accepted revision (#42): advisories the migration
+    fixed, introduced or left in place, plus both sides' full reports."""
+    from app.analysis.security import run_security
+
+    return await run_security(run_id)

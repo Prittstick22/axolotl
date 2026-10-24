@@ -222,6 +222,16 @@ export function listRunEvents(runId: string, afterSequence: number): Promise<Run
   return apiFetch<RunEvent[]>(`${run(runId)}/events?after_sequence=${afterSequence}`);
 }
 
+/** The whole journal: the events endpoint pages, at most 1000 at a time. */
+export async function listAllRunEvents(runId: string): Promise<RunEvent[]> {
+  const all: RunEvent[] = [];
+  for (;;) {
+    const page = await apiFetch<RunEvent[]>(`${run(runId)}/events?after_sequence=${all.at(-1)?.sequence ?? 0}&limit=1000`);
+    all.push(...page);
+    if (page.length < 1000) return all;
+  }
+}
+
 /** GET /api/v1/runs/{run_id}/report - 404 REPORT_NOT_READY until the worker writes it. */
 export function getReport(runId: string): Promise<RunReport> {
   return apiFetch<RunReport>(`${run(runId)}/report`);

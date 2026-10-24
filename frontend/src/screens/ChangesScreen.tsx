@@ -30,7 +30,7 @@ export default function ChangesScreen() {
   const plan = useQuery({ queryKey: ['plan', run.data?.plan_id], queryFn: () => getPlan(run.data!.plan_id), enabled: Boolean(run.data) });
   // Keyed on the verified count, so it loads again as units are accepted mid-run.
   const diff = useQuery({ queryKey: ['run-diff', runId, null, run.data?.units_verified], queryFn: () => getRunDiff(runId!), enabled: Boolean(run.data) });
-  const [unitId, setUnitId] = useState('');
+  const [unitId, setUnitId] = useState(() => params.get('unit') ?? '');
   const [picked, setPicked] = useState<string>();
   const [sideBySide, setSideBySide] = useState(false);
 

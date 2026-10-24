@@ -5,14 +5,15 @@ import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useOutletContext, useParams, useSearchParams } from 'react-router-dom';
 
-import { API_BASE, ApiError, exportUrl, getPlan, getReport } from '@/api/client';
+import { API_BASE, ApiError, exportUrl, getDependencyChanges, getPlan, getReport, getRunDiff, listAllRunEvents } from '@/api/client';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { narrativeBlocks } from '@/lib/narrative';
 import { CLOSING_WAIT_MS, isLive, POLL_MS, useRun } from '@/lib/run';
 import { RUN_STATE, TONE_BORDER, TONE_TEXT, TONE_TINT } from '@/lib/status';
+import { changes as diffChanges } from '@/lib/diff';
 import { Field } from '@/screens/Overview';
-import type { MigrationPlan, RunReport, RunSummary } from '@/types/contracts';
+import type { MigrationPlan, RunEvent, RunReport, RunSummary } from '@/types/contracts';
 
 // worker.py's final_verdict: `completed` only when every unit and the final gates passed.
 const VERDICT_TEXT: Record<RunReport['verdict'], string> = {
@@ -23,6 +24,7 @@ const VERDICT_TEXT: Record<RunReport['verdict'], string> = {
   cancelled: 'The run was stopped before it finished. Units verified before that stay verified; the rest weren’t migrated.',
 };
 const time = (ms: number) => new Date(ms).toLocaleTimeString('en-GB');
+const TEST_COUNTS = ['passed', 'failed', 'inconclusive'] as const;
 
 function Empty({ icon: Icon, title, failed, children }: { icon: Icon; title: string; failed?: boolean; children: ReactNode }) {
   return (
@@ -109,7 +111,7 @@ function Downloads({ report }: { report: RunReport }) {
   );
 }
 
-function Report({ report, plan, run }: { report: RunReport; plan?: MigrationPlan; run?: RunSummary }) {
+function Report({ report, plan, run, repoId, search }: { report: RunReport; plan?: MigrationPlan; run?: RunSummary; repoId: string; search: string }) {
   const { icon: VerdictIcon, label, tone } = RUN_STATE[report.verdict];
   const paths = new Map(plan?.units.map((u) => [u.unit_id, u.file_paths.join(', ')]));
   const rank = (id: string) => plan?.order.indexOf(id) ?? 0;
@@ -118,6 +120,37 @@ function Report({ report, plan, run }: { report: RunReport; plan?: MigrationPlan
   const final = plan && units.findLast((u) => u.accepted_revision)?.accepted_revision;
   const verified = units.filter((u) => u.status === 'passed').length;
   const tests = report.tests_passed + report.tests_failed + report.tests_inconclusive;
+  const log = useQuery({ queryKey: ['run-events-all', report.run_id], queryFn: () => listAllRunEvents(report.run_id) });
+  const diff = useQuery({ queryKey: ['run-diff', report.run_id], queryFn: () => getRunDiff(report.run_id) });
+  const deps = useQuery({ queryKey: ['dependency-changes', report.run_id], queryFn: () => getDependencyChanges(report.run_id) });
+  const files = new Map(plan?.units.map((u) => [u.unit_id, u.file_paths]));
+  // The last gate_result per (unit, gate), as reports/builder.py counts them: every repair attempt re-runs the unit's gates.
+  const lastGates = new Map<string, RunEvent>();
+  const summaries = new Map<string, string>();
+  for (const e of log.data ?? []) {
+    if (!e.unit_id) continue;
+    if (e.event_type === 'gate_result') lastGates.set(`${e.unit_id} ${String(e.payload.gate)}`, e);
+    if (e.event_type === 'patch_proposed' && typeof e.payload.summary === 'string') summaries.set(e.unit_id, e.payload.summary);
+  }
+  const unitTests = (unitId: string) => {
+    const [passed, failed, inconclusive] = TEST_COUNTS.map((k) =>
+      [...lastGates.values()].filter((e) => e.unit_id === unitId).reduce((n, e) => n + (Number(e.payload[k]) || 0), 0),
+    );
+    if (!passed && !failed && !inconclusive) return 'None recorded';
+    return `${passed} passed${failed ? `, ${failed} failed` : ''}${inconclusive ? `, ${inconclusive} inconclusive` : ''}`;
+  };
+  const unitDiff = (unitId: string) => diff.data?.files.filter((f) => files.get(unitId)?.includes(f.path)) ?? [];
+  const lines = (unitId: string) => {
+    const n = unitDiff(unitId).map((f) => diffChanges(f.unified_diff)).reduce((t, c) => ({ added: t.added + c.added, removed: t.removed + c.removed }), { added: 0, removed: 0 });
+    return `+${n.added} / −${n.removed}`;
+  };
+  const withParam = (key: string, value: string) => {
+    const next = new URLSearchParams(search);
+    next.set(key, value);
+    return `?${next}`;
+  };
+  const repoPath = `/repos/${encodeURIComponent(repoId)}`;
+  const python = deps.data?.python;
 
   return (
     <div className="flex flex-1 items-start gap-6 p-6">
@@ -142,6 +175,15 @@ function Report({ report, plan, run }: { report: RunReport; plan?: MigrationPlan
                 {tests ? `${report.tests_passed} passed, ${report.tests_failed} failed${report.tests_inconclusive ? `, ${report.tests_inconclusive} inconclusive` : ''}` : 'None run'}
               </Field>
               <Field label="Counterexamples">{`${report.counterexamples_found} found, ${report.counterexamples_resolved} resolved`}</Field>
+              <Field label="Files changed">{report.changed_files.length}</Field>
+              {python && (
+                <Field label="Python">
+                  {`${python.before.declared ?? 'not declared'} → ${python.after.declared ?? 'not declared'}`}
+                  <Link to={{ pathname: `${repoPath}/dependencies`, search }} className="text-sm font-normal underline underline-offset-4">
+                    Dependency changes
+                  </Link>
+                </Field>
+              )}
               {final && (
                 <Field label="Final revision">
                   <span className="font-mono">{final}</span>
@@ -154,32 +196,62 @@ function Report({ report, plan, run }: { report: RunReport; plan?: MigrationPlan
         <section className="rounded-lg border bg-card">
           <div className="flex items-baseline gap-4 border-b px-4 py-3">
             <h2 className="text-xl leading-tight font-semibold">Units</h2>
-            <span className="ml-auto text-sm text-muted-foreground">
-              {report.changed_files.length} changed {report.changed_files.length === 1 ? 'file' : 'files'}
-            </span>
+            <span className="ml-auto text-sm text-muted-foreground">Tests count each check’s last attempt, as the totals above do.</span>
           </div>
+          {log.isError && <p role="alert" className="px-4 pt-2 text-sm text-failed">Tests and Argon’s summaries couldn’t be loaded: {log.error.message}</p>}
+          {diff.isError && <p role="alert" className="px-4 pt-2 text-sm text-failed">Line counts couldn’t be loaded: {diff.error.message}</p>}
+          {deps.isError && <p role="alert" className="px-4 pt-2 text-sm text-failed">The Python version and dependency changes couldn’t be loaded: {deps.error.message}</p>}
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse [&_td]:border-t [&_td]:px-3 [&_td]:py-2 [&_th]:px-3 [&_th]:py-2 [&_th]:text-sm [&_th]:font-medium [&_th]:whitespace-nowrap [&_th]:text-muted-foreground">
+            <table className="w-full border-collapse [&_td]:px-3 [&_td]:py-2 [&_th]:px-3 [&_th]:py-2 [&_th]:text-sm [&_th]:font-medium [&_th]:whitespace-nowrap [&_th]:text-muted-foreground">
               <thead>
                 <tr className="text-left">
                   <th>Unit</th>
                   <th>Status</th>
+                  <th>Lines</th>
                   <th className="text-right">Attempts</th>
+                  <th>Tests</th>
                   <th>Accepted revision</th>
+                  <th><span className="sr-only">Links</span></th>
                 </tr>
               </thead>
-              <tbody>
-                {units.map((u) => (
-                  <tr key={u.unit_id}>
-                    <td className="font-mono text-sm">{paths.get(u.unit_id) ?? u.unit_id}</td>
-                    <td>
-                      <StatusBadge status={u.status} />
-                    </td>
-                    <td className="text-right">{u.attempts}</td>
-                    <td className={cn('font-mono text-sm', !u.accepted_revision && 'text-muted-foreground')}>{u.accepted_revision ?? 'None'}</td>
-                  </tr>
-                ))}
-              </tbody>
+              {units.map((u) => {
+                const summary = u.status === 'passed' ? summaries.get(u.unit_id) : undefined;
+                const first = files.get(u.unit_id)?.[0];
+                return (
+                  // One tbody per unit, so its summary row reads as part of it.
+                  <tbody key={u.unit_id} className="border-t text-sm">
+                    <tr>
+                      <td className="font-mono">{paths.get(u.unit_id) ?? u.unit_id}</td>
+                      <td>
+                        <StatusBadge status={u.status} />
+                      </td>
+                      <td className="whitespace-nowrap">{diff.data ? lines(u.unit_id) : diff.isError ? 'Unknown' : '…'}</td>
+                      <td className="text-right">{u.attempts}</td>
+                      <td>{log.data ? unitTests(u.unit_id) : log.isError ? 'Unknown' : '…'}</td>
+                      <td className={cn('font-mono', !u.accepted_revision && 'text-muted-foreground')}>{u.accepted_revision ?? 'None'}</td>
+                      <td className="whitespace-nowrap">
+                        {unitDiff(u.unit_id).length > 0 && (
+                          <Link to={{ pathname: `${repoPath}/changes`, search: withParam('unit', u.unit_id) }} className="underline underline-offset-4">
+                            Diff
+                          </Link>
+                        )}
+                        {first && (
+                          <Link to={{ pathname: `${repoPath}/docs`, search: withParam('path', first) }} className="ml-3 underline underline-offset-4">
+                            Docs
+                          </Link>
+                        )}
+                      </td>
+                    </tr>
+                    {summary && (
+                      <tr>
+                        <td colSpan={7} className="pt-0 text-muted-foreground">
+                          <span className="font-medium">Argon’s summary, model-written:</span> {summary}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                );
+              })}
             </table>
           </div>
         </section>
@@ -270,7 +342,7 @@ export default function ReportScreen() {
           navSlot,
         )}
       {report.data ? (
-        <Report report={report.data} plan={plan.data} run={run.data} />
+        <Report report={report.data} plan={plan.data} run={run.data} repoId={repoId} search={search} />
       ) : err instanceof ApiError && err.code === 'REPORT_NOT_READY' ? (
         waiting(err, report.errorUpdatedAt) ? (
           <Empty icon={ListChecksIcon} title="Report not ready yet">

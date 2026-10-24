@@ -255,6 +255,9 @@ class VerificationResult(BaseModel):
     runner_mode: str
     started_at: datetime
     finished_at: datetime
+    # Additive under §11 (#22): the interpreter, image and digest that produced this
+    # verdict, probed from the container. None on older records and inconclusive runs.
+    environment: dict[str, str] | None = None
 
 
 class Counterexample(BaseModel):

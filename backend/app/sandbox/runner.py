@@ -12,6 +12,8 @@ Two rules with no exceptions:
     mount. The model's key stays on the backend.
 
 The three gate commands all run under the same profile; only the command differs.
+Every gate takes a `Runtime` (#22) naming the interpreter image to run in; without
+one it uses the original 3.12 image. The profile is the same for every image.
 """
 
 from __future__ import annotations
@@ -24,6 +26,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.config import get_settings
+from app.sandbox.runtimes import Runtime
+from app.sandbox.runtimes import runtime as default_runtime
 
 log = logging.getLogger(__name__)
 
@@ -106,13 +110,15 @@ class RunnerStatus:
 # status
 # --------------------------------------------------------------------------
 
-async def runner_status() -> dict:
-    """SHARED_CONTRACTS §8: {mode, available, image_digest}.
+async def runner_status(runtime: Runtime | None = None) -> dict:
+    """SHARED_CONTRACTS §8: {mode, available, image_digest}, for one runtime's image.
 
     `disabled` whenever the image cannot actually be run, so the rest of the system
-    degrades to `inconclusive` rather than discovering it mid-gate.
+    degrades to `inconclusive` rather than discovering it mid-gate. Without a runtime
+    this is the original 3.12 image, as `/system/status` reports.
     """
     settings = get_settings()
+    runtime = runtime or default_runtime()
 
     if settings.runner_mode == "disabled":
         return RunnerStatus("disabled", False, detail="RUNNER_MODE=disabled").as_dict()
@@ -125,14 +131,14 @@ async def runner_status() -> dict:
         ).as_dict()
 
     inspect = await _docker(
-        "image", "inspect", settings.runner_image, "--format", "{{.Id}}", timeout=20
+        "image", "inspect", runtime.image, "--format", "{{.Id}}", timeout=20
     )
     if inspect.exit_code != 0:
         return RunnerStatus(
             "disabled", False,
             detail=(
-                f"image {settings.runner_image} not found; "
-                f"build it with: docker build -t {settings.runner_image} runner/"
+                f"image {runtime.image} (Python {runtime.python}) not found; "
+                f"build it with: {runtime.build_command}"
             ),
         ).as_dict()
 
@@ -141,8 +147,35 @@ async def runner_status() -> dict:
     ).as_dict()
 
 
-async def is_available() -> bool:
-    return bool((await runner_status())["available"])
+async def is_available(runtime: Runtime | None = None) -> bool:
+    return bool((await runner_status(runtime))["available"])
+
+
+# image id -> the Python version that image actually runs
+_PROBED: dict[str, str] = {}
+
+
+async def probe_python(runtime: Runtime, image_digest: str | None = None) -> str | None:
+    """The interpreter version the image really runs, read from inside it.
+
+    Recorded with every baseline and verification, so a verdict names the Python it
+    was produced on rather than the one the image was meant to have. None when the
+    probe fails; never a guess. Cached per image id, which changes on every rebuild.
+    """
+    if image_digest and image_digest in _PROBED:
+        return _PROBED[image_digest]
+    result = await _run_in_container(
+        mounts=[],
+        command=["python", "-c", "import platform; print(platform.python_version())"],
+        timeout=30,
+        runtime=runtime,
+    )
+    version = result.stdout.strip() if result.exit_code == 0 else ""
+    if not version:
+        return None
+    if image_digest:
+        _PROBED[image_digest] = version
+    return version
 
 
 # --------------------------------------------------------------------------
@@ -150,7 +183,11 @@ async def is_available() -> bool:
 # --------------------------------------------------------------------------
 
 async def run_behaviour_cases(
-    code_dir: Path, cases_file: Path, *, timeout: int | None = None
+    code_dir: Path,
+    cases_file: Path,
+    *,
+    timeout: int | None = None,
+    runtime: Runtime | None = None,
 ) -> tuple[list[dict], RunResult]:
     """Execute cases in the sandbox. Returns (outcomes, raw result).
 
@@ -169,6 +206,7 @@ async def run_behaviour_cases(
             "--code", "/code", "--cases", "/cases.json",
         ],
         timeout=timeout,
+        runtime=runtime,
     )
 
     outcomes: list[dict] = []
@@ -187,21 +225,36 @@ async def run_behaviour_cases(
     return outcomes, result
 
 
-async def run_compileall(code_dir: Path, *, timeout: int | None = None) -> RunResult:
-    """The `compile` gate. PYTHONPYCACHEPREFIX in the image keeps .pyc off read-only /code."""
+async def run_compileall(
+    code_dir: Path, *, timeout: int | None = None, runtime: Runtime | None = None
+) -> RunResult:
+    """The `compile` gate, on the runtime's interpreter.
+
+    Python 3: `compileall`, with PYTHONPYCACHEPREFIX in the image keeping .pyc off the
+    read-only /code. Python 2.7 has no such variable, so `compile_tree.py` compiles
+    in memory instead (see `runtimes`).
+    """
+    runtime = runtime or default_runtime()
+    mounts = [Mount(code_dir, "/code")]
+    if runtime.compile_needs_harness:
+        mounts.append(Mount(HARNESS_DIR, "/harness"))
     return await _run_in_container(
-        mounts=[Mount(code_dir, "/code")],
-        command=["python", "-m", "compileall", "-q", "/code"],
+        mounts=mounts,
+        command=list(runtime.compile_command),
         timeout=timeout,
+        runtime=runtime,
     )
 
 
-async def run_pytest(code_dir: Path, *, timeout: int | None = None) -> RunResult:
-    """The `existing_tests` gate: the fixture's own suite on the candidate tree."""
+async def run_pytest(
+    code_dir: Path, *, timeout: int | None = None, runtime: Runtime | None = None
+) -> RunResult:
+    """The `existing_tests` gate: the project's own suite, on the runtime's interpreter."""
     return await _run_in_container(
         mounts=[Mount(code_dir, "/code")],
         command=["pytest", "-q", "-p", "no:cacheprovider", "/code/tests"],
         timeout=timeout,
+        runtime=runtime,
     )
 
 
@@ -210,16 +263,20 @@ async def run_pytest(code_dir: Path, *, timeout: int | None = None) -> RunResult
 # --------------------------------------------------------------------------
 
 async def _run_in_container(
-    *, mounts: list[Mount], command: list[str], timeout: int | None = None
+    *,
+    mounts: list[Mount],
+    command: list[str],
+    timeout: int | None = None,
+    runtime: Runtime | None = None,
 ) -> RunResult:
-    settings = get_settings()
+    image = (runtime or default_runtime()).image
     seconds = timeout or DEFAULT_TIMEOUT_SECONDS
     name = f"axolotl-{secrets.token_hex(6)}"
 
     args = ["run", "--name", name, *SECURITY_PROFILE]
     for mount in mounts:
         args.extend(mount.as_args())
-    args.append(settings.runner_image)
+    args.append(image)
     args.extend(command)
 
     result = await _docker(*args, timeout=seconds)

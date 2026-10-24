@@ -316,6 +316,7 @@ class VerificationResult(BaseModel):
     runner_mode: str
     started_at: datetime
     finished_at: datetime
+    environment: dict[str, str] | None = None   # §11, #22: python, image, image_digest, runner_mode
 
 class Counterexample(BaseModel):
     counterexample_id: str
@@ -647,6 +648,8 @@ MONGODB_URI=
 MONGODB_DATABASE=axolotl
 RUNNER_MODE=trusted_docker         # trusted_docker | disabled
 RUNNER_IMAGE=axolotl-runner:latest
+RUNNER_IMAGE_PY27=axolotl-runner:py2.7
+RUNNER_IMAGE_PY314=axolotl-runner:py3.14
 ALLOW_ARBITRARY_CODE_EXECUTION=false
 WORKSPACE_ROOT=./.axolotl_workspaces
 FRONTEND_ORIGIN=http://localhost:5173
@@ -736,6 +739,27 @@ list branch it can now drop, `app/agents/tools.py`).
 contracts win on names and shapes. `skipped` is reachable from every in-flight unit
 state and carries both meanings - never attempted (T-13) and abandoned on
 cancellation - which the diagram does not distinguish either.
+
+### Additive: `VerificationResult.environment` and one runner image per interpreter (Dev 1, #22)
+
+Additive and optional, so it merges immediately under §11.3:
+
+```python
+environment: dict[str, str] | None = None   # {python, image, image_digest, runner_mode}
+```
+
+It records what actually produced the verdict: the interpreter version **probed from
+inside the container**, the image tag and its digest. `None` on records written before
+#22 and on inconclusive results where nothing ran. `BaselineSummary.environment` keeps
+its shape and gains `image` and `candidate_python`; its `python` is now probed too,
+where it used to be the constant `"3.12"`.
+
+Two settings join §10, both with defaults: `RUNNER_IMAGE_PY27` and `RUNNER_IMAGE_PY314`.
+`python2_to_3` baselines on 2.7 and verifies on 3.14; every other target keeps
+`RUNNER_IMAGE` (3.12) on both sides.
+
+**For Dev 5:** `frontend/src/types/contracts.ts` should gain
+`environment?: Record<string, string> | null` on `VerificationResult` to mirror this.
 
 ### Additive: `unit_skipped`, and the attempt budget on `RunSummary` (Dev 5 asked, Dev 2 acked 24 Oct)
 

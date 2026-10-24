@@ -35,7 +35,8 @@ from app.models.contracts import (
     VerificationResult,
     Workspace,
 )
-from app.sandbox import runner, workspaces
+from app.sandbox import runner, runtimes, workspaces
+from app.sandbox.runtimes import Runtime, RuntimePair
 from app.verification import comparison, store
 from app.verification.cases import (
     collect_cases,
@@ -83,6 +84,39 @@ def _run_cases_dir(run_id: str) -> Path:
     return workspaces.workspace_root() / "runs" / run_id / "cases"
 
 
+async def runtimes_for_run(run_id: str) -> RuntimePair:
+    """#22: the run's migration target decides which interpreter runs each side.
+
+    `python2_to_3` records the baseline on 2.7 and checks candidates on 3.14. A run
+    with no plan on record keeps the original 3.12 pair; an unknown target raises
+    rather than verifying on a guessed interpreter.
+    """
+    from app.persistence import db
+
+    database = await db.get_db()
+    run = await database["migration_runs"].find_one(
+        {"run_id": run_id}, {"_id": 0, "plan_id": 1}
+    )
+    plan = None
+    if run:
+        plan = await database["migration_plans"].find_one(
+            {"plan_id": run["plan_id"]}, {"_id": 0, "target_id": 1}
+        )
+    return runtimes.for_target(plan["target_id"] if plan else None)
+
+
+async def _environment(runtime: Runtime, status: dict) -> dict[str, str]:
+    """What actually ran: the probed interpreter version, never the intended one."""
+    digest = str(status.get("image_digest") or "")
+    actual = await runner.probe_python(runtime, digest or None)
+    return {
+        "python": actual or f"unknown (image built for {runtime.python})",
+        "image": runtime.image,
+        "image_digest": digest,
+        "runner_mode": str(status["mode"]),
+    }
+
+
 # --------------------------------------------------------------------------
 # baseline
 # --------------------------------------------------------------------------
@@ -97,7 +131,8 @@ async def capture_baseline(
     """
     from app.ingestion import snapshot_path
 
-    status = await runner.runner_status()
+    pair = await runtimes_for_run(run_id)
+    status = await runner.runner_status(pair.baseline)
     if not status["available"]:
         raise RuntimeError(f"cannot capture a baseline: {status.get('detail')}")
 
@@ -114,7 +149,9 @@ async def capture_baseline(
         _run_cases_dir(run_id) / "baseline.json",
     )
 
-    raw, result = await runner.run_behaviour_cases(snapshot, cases_file)
+    raw, result = await runner.run_behaviour_cases(
+        snapshot, cases_file, runtime=pair.baseline
+    )
     outcomes = _outcomes_by_case(raw, cases)
 
     captured = [o for o in outcomes.values() if o.status in {"ok", "raised"}]
@@ -123,7 +160,7 @@ async def capture_baseline(
 
     await store.save_baseline_outcomes(run_id, list(outcomes.values()))
 
-    tests = await runner.run_pytest(snapshot)
+    tests = await runner.run_pytest(snapshot, runtime=pair.baseline)
     existing = GateResult(
         gate="existing_tests",
         status="passed" if tests.exit_code == 0 else "failed",
@@ -146,10 +183,9 @@ async def capture_baseline(
         cases_failed_to_capture=len(failed) + len(missing),
         existing_tests=existing,
         environment={
-            "python": "3.12",
-            "runner_mode": status["mode"],
-            "image_digest": str(status.get("image_digest") or ""),
+            **(await _environment(pair.baseline, status)),
             "snapshot": str(snapshot),
+            "candidate_python": pair.candidate.python,
         },
     )
 
@@ -198,18 +234,20 @@ async def verify_unit(
     verification_id = _new_id("ver_")
     candidate = Path(workspace.root)
 
-    status = await runner.runner_status()
+    runtime = (await runtimes_for_run(run_id)).candidate
+    status = await runner.runner_status(runtime)
     if not status["available"]:
         return await _all_inconclusive(
             verification_id, run_id, unit.unit_id, attempt, workspace,
             started, status.get("detail") or RUNNER_UNAVAILABLE,
         )
+    environment = await _environment(runtime, status)
 
     gates: list[GateResult] = []
     policy_clean = True
 
     # 1. compile -------------------------------------------------------
-    compiled = await runner.run_compileall(candidate)
+    compiled = await runner.run_compileall(candidate, runtime=runtime)
     policy_clean &= compiled.policy_clean
     gates.append(GateResult(
         gate="compile",
@@ -227,7 +265,7 @@ async def verify_unit(
         gates.append(_policy_gate(policy_clean))
         return await _persist(
             verification_id, run_id, unit.unit_id, attempt, workspace,
-            gates, [], [], started, status["mode"],
+            gates, [], [], started, status["mode"], environment,
         )
 
     baseline = await store.get_baseline_outcomes(run_id)
@@ -236,7 +274,7 @@ async def verify_unit(
     # 2. differential --------------------------------------------------
     unit_cases = await load_cases(repo_id, unit.unit_id, include_held_out=True)
     differential, diff_result = await _differential(
-        run_id, candidate, unit_cases, baseline, "differential"
+        run_id, candidate, unit_cases, baseline, "differential", runtime
     )
     if diff_result:
         policy_clean &= diff_result.policy_clean
@@ -251,7 +289,7 @@ async def verify_unit(
 
     if impacted_cases:
         impacted_comparisons, impacted_result = await _differential(
-            run_id, candidate, impacted_cases, baseline, "impacted"
+            run_id, candidate, impacted_cases, baseline, "impacted", runtime
         )
         if impacted_result:
             policy_clean &= impacted_result.policy_clean
@@ -266,7 +304,7 @@ async def verify_unit(
         ))
 
     # 4. existing tests ------------------------------------------------
-    tests = await runner.run_pytest(candidate)
+    tests = await runner.run_pytest(candidate, runtime=runtime)
     policy_clean &= tests.policy_clean
     gates.append(GateResult(
         gate="existing_tests",
@@ -285,7 +323,7 @@ async def verify_unit(
 
     return await _persist(
         verification_id, run_id, unit.unit_id, attempt, workspace,
-        gates, all_comparisons, counterexamples, started, status["mode"],
+        gates, all_comparisons, counterexamples, started, status["mode"], environment,
     )
 
 
@@ -316,7 +354,8 @@ async def verify_final(run_id: str, workspace: Workspace | None) -> Verification
     started = datetime.now(UTC)
     verification_id = _new_id("ver_")
 
-    status = await runner.runner_status()
+    runtime = (await runtimes_for_run(run_id)).candidate
+    status = await runner.runner_status(runtime)
     if workspace is None or not status["available"]:
         detail = (
             "no accepted revision to verify" if workspace is None
@@ -328,14 +367,15 @@ async def verify_final(run_id: str, workspace: Workspace | None) -> Verification
         )
 
     candidate = Path(workspace.root)
+    environment = await _environment(runtime, status)
     repo_id = await repository_for_run(run_id)
     all_cases = await load_cases(repo_id, include_held_out=True)
     baseline = await store.get_baseline_outcomes(run_id)
 
     comparisons, result = await _differential(
-        run_id, candidate, all_cases, baseline, "final"
+        run_id, candidate, all_cases, baseline, "final", runtime
     )
-    tests = await runner.run_pytest(candidate)
+    tests = await runner.run_pytest(candidate, runtime=runtime)
 
     counts = comparison.summarise(comparisons)
     passed = (
@@ -365,7 +405,7 @@ async def verify_final(run_id: str, workspace: Workspace | None) -> Verification
     counterexamples = _counterexamples(run_id, None, 1, comparisons, all_cases)
     return await _persist(
         verification_id, run_id, None, 1, workspace,
-        gates, comparisons, counterexamples, started, status["mode"],
+        gates, comparisons, counterexamples, started, status["mode"], environment,
     )
 
 
@@ -379,6 +419,7 @@ async def _differential(
     cases: list[BehaviourCase],
     baseline: dict[str, CaseOutcome],
     label: str,
+    runtime: Runtime | None = None,
 ) -> tuple[list[CaseComparison], runner.RunResult | None]:
     if not cases:
         return [], None
@@ -387,7 +428,7 @@ async def _differential(
         [c.case_id for c in cases], candidate, project_root(),
         _run_cases_dir(run_id) / f"{label}-{secrets.token_hex(4)}.json",
     )
-    raw, result = await runner.run_behaviour_cases(candidate, cases_file)
+    raw, result = await runner.run_behaviour_cases(candidate, cases_file, runtime=runtime)
     new_outcomes = _outcomes_by_case(raw, cases)
 
     comparisons: list[CaseComparison] = []
@@ -502,6 +543,7 @@ async def _persist(
     counterexamples: list[Counterexample],
     started: datetime,
     runner_mode: str,
+    environment: dict[str, str] | None = None,
 ) -> VerificationResult:
     # Computed here and nowhere else.
     passed = all(g.status == "passed" for g in gates if g.required)
@@ -517,6 +559,7 @@ async def _persist(
         counterexample_ids=[c.counterexample_id for c in counterexamples],
         all_required_gates_passed=passed,
         runner_mode=runner_mode,
+        environment=environment,
         started_at=started,
         finished_at=datetime.now(UTC),
     )

@@ -40,7 +40,8 @@ Time left: feature freeze **Sat 22:00**, submission **Sun 10:45** (cutoff 12:00)
   backend tests and the sandbox run on today. It is deleted once chess runs end to end
   ([#54](https://github.com/Prittstick22/axolotl/issues/54)).
 - **Demo work is not MVP.** The demo script, the presentation and the videos
-  ([#14](https://github.com/Prittstick22/axolotl/issues/14), [#31](https://github.com/Prittstick22/axolotl/issues/31), [#15](https://github.com/Prittstick22/axolotl/issues/15)) are labelled `demo` and are unassigned for now. Do them last.
+  ([#14](https://github.com/Prittstick22/axolotl/issues/14), [#70](https://github.com/Prittstick22/axolotl/issues/70), [#15](https://github.com/Prittstick22/axolotl/issues/15)) are labelled `demo`. The presentation
+  ([#70](https://github.com/Prittstick22/axolotl/issues/70), 1 to 1:30 minutes) is Will's (Dev 4) and starts now; the script and videos come last.
 
 ## Summary
 
@@ -146,7 +147,7 @@ and videos show the real product.
 | Issue | Owner | Depends on |
 |---|---|---|
 | [#14](https://github.com/Prittstick22/axolotl/issues/14) Write the demo script and rehearse the 3-minute demo | Unassigned | #4 |
-| [#31](https://github.com/Prittstick22/axolotl/issues/31) Prepare the presentation and the 2-minute Q&A | Unassigned | #14 |
+| [#70](https://github.com/Prittstick22/axolotl/issues/70) Make the 1–1:30 minute presentation (replaces #31) | Dev 4 · `WilliamParis1` | [#70](https://github.com/Prittstick22/axolotl/issues/70) (`demo`), — |
 | [#15](https://github.com/Prittstick22/axolotl/issues/15) Record and upload the three submission videos | Unassigned | #4, #14 |
 
 **Rebalanced 24 Oct.** Dev 4's backend tickets #22 and #29 moved to Dev 1, so Dev 4 has quicker
@@ -194,7 +195,7 @@ pulled forward if the MVP is on track.
 | Dev 3 · `Caroline3110` | [#11](https://github.com/Prittstick22/axolotl/issues/11), [#12](https://github.com/Prittstick22/axolotl/issues/12), [#28](https://github.com/Prittstick22/axolotl/issues/28), [#30](https://github.com/Prittstick22/axolotl/issues/30) (with Dev 2) | — | [#24](https://github.com/Prittstick22/axolotl/issues/24), [#25](https://github.com/Prittstick22/axolotl/issues/25), [#26](https://github.com/Prittstick22/axolotl/issues/26), [#33](https://github.com/Prittstick22/axolotl/issues/33), [#34](https://github.com/Prittstick22/axolotl/issues/34), [#37](https://github.com/Prittstick22/axolotl/issues/37) |
 | Dev 4 · `WilliamParis1` | [#2](https://github.com/Prittstick22/axolotl/issues/2) (review), [#44](https://github.com/Prittstick22/axolotl/issues/44) (review), [#9](https://github.com/Prittstick22/axolotl/issues/9), [#10](https://github.com/Prittstick22/axolotl/issues/10), [#23](https://github.com/Prittstick22/axolotl/issues/23) | — | [#46](https://github.com/Prittstick22/axolotl/issues/46) |
 | Dev 5 · `PanotAbhay` | [#5](https://github.com/Prittstick22/axolotl/issues/5) | — | [#20](https://github.com/Prittstick22/axolotl/issues/20), [#34](https://github.com/Prittstick22/axolotl/issues/34), [#35](https://github.com/Prittstick22/axolotl/issues/35), [#36](https://github.com/Prittstick22/axolotl/issues/36), [#37](https://github.com/Prittstick22/axolotl/issues/37), [#38](https://github.com/Prittstick22/axolotl/issues/38), [#40](https://github.com/Prittstick22/axolotl/issues/40) |
-| Demo, unassigned | — | — | [#14](https://github.com/Prittstick22/axolotl/issues/14), [#31](https://github.com/Prittstick22/axolotl/issues/31), [#15](https://github.com/Prittstick22/axolotl/issues/15) (`demo`, not MVP) |
+| Demo, unassigned | — | — | [#14](https://github.com/Prittstick22/axolotl/issues/14), [#15](https://github.com/Prittstick22/axolotl/issues/15) (`demo`, not MVP) |
 | Anyone | — | — | [#54](https://github.com/Prittstick22/axolotl/issues/54) (cleanup), [#41](https://github.com/Prittstick22/axolotl/issues/41) (spike), [#42](https://github.com/Prittstick22/axolotl/issues/42) (stretch), [#43](https://github.com/Prittstick22/axolotl/issues/43) (spike, stretch) |
 
 ## Product features

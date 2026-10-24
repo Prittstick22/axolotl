@@ -6,6 +6,7 @@ caveats must say plainly what was and was not established.
 """
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -347,3 +348,83 @@ async def test_a_final_verification_counterexample_is_never_counted_resolved(wor
     report = await build_report(make_run())
     assert report.counterexamples_found == 1
     assert report.counterexamples_resolved == 0
+
+
+@pytest.mark.parametrize("changed", [False, True], ids=["unchanged", "two-revisions"])
+async def test_report_and_patch_compare_the_final_tree_to_the_original_snapshot(
+    world, monkeypatch, tmp_path, changed,
+):
+    """#44: use the real workspace diff, not a precomputed report-side fake."""
+    import app.ingestion as ingestion
+    import app.verification as verification
+    from app.models.contracts import FilePatch, PatchProposal
+    from app.sandbox import workspaces
+
+    run = make_run()
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    originals = {
+        "pricing.py": "TAX = 1\n",
+        "customers.py": "NAME = 'legacy'\n",
+        "README.md": "Unchanged documentation\n",
+        "tests/test_original.py": "def test_original(): pass\n",
+    }
+    for relative, content in originals.items():
+        path = snapshot / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+
+    async def repository_for_run(run_id):
+        assert run_id == run.run_id
+        return run.repository_id
+
+    def snapshot_path(repo_id):
+        assert repo_id == run.repository_id
+        return snapshot
+
+    monkeypatch.setattr(ingestion, "snapshot_path", snapshot_path)
+    monkeypatch.setattr(verification, "repository_for_run", repository_for_run)
+    monkeypatch.setattr(workspaces, "workspace_root", lambda: tmp_path / "workspaces")
+    monkeypatch.setattr(ports_module, "diff", workspaces.diff)
+    monkeypatch.setattr(ports_module, "workspace_path", workspaces.workspace_path)
+
+    first = await workspaces.create_workspace(run.run_id, run.repository_id)
+    if changed:
+        ack = await workspaces.apply_patch(first, PatchProposal(
+            unit_id="unit_pricing", files=[FilePatch(path="pricing.py", new_content="TAX = 2\n")],
+            summary="Update pricing", rationale="test",
+        ), ["pricing.py"])
+        assert ack.accepted
+    await workspaces.accept_workspace(first)
+    final = await workspaces.create_workspace(run.run_id, run.repository_id, first.revision_id)
+    if changed:
+        ack = await workspaces.apply_patch(final, PatchProposal(
+            unit_id="unit_customers",
+            files=[FilePatch(path="customers.py", new_content="NAME = 'modern'\n")],
+            summary="Update customers", rationale="test",
+        ), ["customers.py"])
+        assert ack.accepted
+    await workspaces.accept_workspace(final)
+    world["journal"] = [
+        event(1, "snapshot_accepted", revision=first.revision_id),
+        event(2, "snapshot_accepted", revision=final.revision_id),
+    ]
+
+    report = await build_report(run)
+    patch = next(a for a in world["artefacts"] if a["kind"] == "patch")
+    expected = ["customers.py", "pricing.py"] if changed else []
+    assert report.changed_files == patch["changed_files"] == expected
+    assert patch["base_revision"] == "rev_baseline"
+    assert patch["revision"] == final.revision_id
+    content = Path(patch["path"]).read_text(encoding="utf-8")
+    if changed:
+        assert "-TAX = 1\n+TAX = 2\n" in content
+        assert "-NAME = 'legacy'\n+NAME = 'modern'\n" in content
+        assert "README.md" not in content and "tests/test_original.py" not in content
+    else:
+        assert content == ""
+    assert (await artefacts_module.verify_patch_matches_revision(
+        run.run_id, final.revision_id,
+    ))["matches"] is True
+    for relative, original in originals.items():
+        assert (snapshot / relative).read_text(encoding="utf-8") == original

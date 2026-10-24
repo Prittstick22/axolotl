@@ -2,8 +2,9 @@
 
 > **Decision, 24 Oct 2026:** the demo is Will's chess game, migrated from Python 2.7 to Python 3.14.
 > **Chess is the only demo; there is no backup.** `legacy_orders` stays in the repo only as the test
-> fixture until chess replaces it ([#54](https://github.com/Prittstick22/axolotl/issues/54)). Chess can't be migrated yet:
-> see [#30](https://github.com/Prittstick22/axolotl/issues/30) and [PROJECT_STATUS.md](PROJECT_STATUS.md).
+> fixture until chess replaces it ([#54](https://github.com/Prittstick22/axolotl/issues/54)).
+> The Python 2-to-3 target is enabled after #22's runners and #23's case suite landed.
+> A completed model-generated chess run still needs live evidence (#4).
 
 ## Source and placement
 
@@ -72,18 +73,16 @@ These are direct fixture checks, not an Axolotl sandbox verdict or a model-gener
 migration result. The runtime is local and temporary; the sandbox must provide its
 own reproducible interpreters.
 
-## Integration work still required
+## Integration status
 
 1. **Baseline:** use the refreshed Python 2.7-compatible directory, not the stale
    ZIP. Preserve it unchanged in snapshots and keep candidate workspaces separate.
    The upstream README's relative ZIP/workspace references describe its source folder.
 2. **Interpreter-specific runner:** done in #22. `python2_to_3` baselines on the
    `axolotl-runner:py2.7` image and verifies candidates on `axolotl-runner:py3.14`,
-   and each verdict records the probed interpreter and image digest. The rest of this
-   item is the original note. The current image uses Python 3.12 and
-   verification records that runtime. Baseline execution needs Python 2.7, candidates
-   need Python 3.14, and harness/test tooling must be compatible with each interpreter.
-   Report the actual runtime/image digest. Do not simply relabel the current image.
+   and each verdict records the probed interpreter and image digest. The separate
+   `modern_python3` target continues to use Python 3.12 on both sides. A missing
+   runtime makes checks inconclusive; there is no fallback to another interpreter.
 3. **Parsing (Dev 3):** ingestion currently uses the backend's Python 3 AST parser.
    This dual-compatible fixture parses, but Python 2-only syntax in other inputs
    would produce partial analysis. General Python 2 support needs a compatible
@@ -93,22 +92,20 @@ own reproducible interpreters.
    and candidate execution use that persisted identity, so migrating a candidate
    does not accidentally switch or drop its hidden suite. Unrecognised imports get
    no built-in hidden cases (#29).
-5. **Fixture/target registration (Dev 2/3/4):** add chess to the trusted fixture
-   allowlist only with the correct cases and runtime support. The existing
-   `python2_to_3` target is explicitly unsupported; keep it that way until both
-   interpreters and required gates work. The supported `modern_python3` target
-   describes Python 3 modernisation, not Python 2.7 to 3.14 migration.
+5. **Fixture/target registration (Dev 2/3/4):** `python2_to_3` is now supported,
+   following the merged #22 and #23 work. The existing exact-content trusted-fixture
+   rule remains required: enabling a target does not enable arbitrary uploads.
+   The separate `modern_python3` target still describes Python 3 modernisation.
 6. **Packaging ownership:** the current patch allowlist is built from Python module
    paths, so `setup.py` must be included deliberately as packaging metadata or a
    separate approved migration step. Never import/execute `setup.py` for analysis.
-7. **Agent integration (Dev 1/2):** `dev1/gemini-agent` is pushed but is not present
-   on this branch's main base (`2420946`). Merge that reviewed agent implementation
-   separately, then demonstrate a real model patch and independent verifier verdict.
+7. **Live run evidence (Dev 1/2):** the agent implementation is present. A working
+   Atlas/model/Docker setup must still demonstrate a real chess patch and independent
+   final verifier verdict. Container fixture tests alone do not prove that chain.
 
-Chess is intentionally not added to the executable allowlist by this source-import
-change. To explore the current dual-compatible source in the graph before runtime work
-lands, a ZIP upload follows the existing static-analysis-only path; it must not be
-presented as an executable Python 2 migration.
+Exact trusted chess copies can execute under the existing content-matching rule.
+Modified or unrelated uploads remain static-only. Rebuild old ZIPs and re-import
+chess so the persisted inventory contains the new visible and hidden cases.
 
 
 ## UI upload flow

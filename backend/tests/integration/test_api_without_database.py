@@ -70,12 +70,20 @@ def test_unsupported_target_is_rejected_before_the_database_is_touched(
 ):
     """T-08 must hold even with Atlas down - validation comes first."""
     response = client.post(
-        f"{API}/repositories/repo_000000000001/plans", json={"target_id": "python2_to_3"}
+        f"{API}/repositories/repo_000000000001/plans", json={"target_id": "fastapi"}
     )
     assert response.status_code == 422
     body = response.json()
     assert body["error"]["code"] == "UNSUPPORTED_TARGET"
     assert body["error"]["details"]["reason"]
+
+
+def test_enabled_chess_target_reports_missing_database_not_unsupported(client: TestClient):
+    response = client.post(
+        f"{API}/repositories/repo_000000000001/plans", json={"target_id": "python2_to_3"}
+    )
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "DATABASE_UNAVAILABLE"
 
 
 def test_unknown_target_is_rejected_before_the_database_is_touched(client: TestClient):

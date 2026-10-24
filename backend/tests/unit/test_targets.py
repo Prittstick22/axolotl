@@ -8,9 +8,9 @@ from app.errors import AppError
 from tests.conftest import API
 
 
-def test_only_modern_python3_is_supported():
+def test_the_two_implemented_python_targets_are_supported():
     supported = [t.target_id for t in MIGRATION_TARGETS if t.supported]
-    assert supported == ["modern_python3"]
+    assert supported == ["modern_python3", "python2_to_3"]
 
 
 def test_every_unsupported_target_explains_itself():
@@ -37,13 +37,14 @@ def test_endpoint_lists_every_target(client: TestClient):
     }
 
 
-def test_supported_target_resolves():
-    assert require_supported_target("modern_python3").target_id == "modern_python3"
+@pytest.mark.parametrize("target_id", ["modern_python3", "python2_to_3"])
+def test_supported_target_resolves(target_id):
+    assert require_supported_target(target_id).target_id == target_id
 
 
 @pytest.mark.parametrize(
     "target_id",
-    ["fastapi", "async_python", "python_to_typescript", "python2_to_3"],
+    ["fastapi", "async_python", "python_to_typescript"],
 )
 def test_unsupported_target_is_rejected_with_422(target_id):
     """T-08: disabled or rejected at the backend with a clear error."""
@@ -55,6 +56,7 @@ def test_unsupported_target_is_rejected_with_422(target_id):
     assert error.status_code == 422
     assert error.details["target_id"] == target_id
     assert error.details["reason"]
+    assert error.details["supported"] == ["modern_python3", "python2_to_3"]
 
 
 def test_unknown_target_is_rejected_the_same_way():
@@ -62,6 +64,7 @@ def test_unknown_target_is_rejected_the_same_way():
         require_supported_target("cobol_to_rust")
     assert caught.value.code == "UNSUPPORTED_TARGET"
     assert caught.value.status_code == 422
+    assert caught.value.details["supported"] == ["modern_python3", "python2_to_3"]
 
 
 # --------------------------------------------------------------------------
@@ -75,12 +78,17 @@ def test_the_python_2_target_declares_the_version_it_targets():
     assert _BY_ID["modern_python3"].target_python == "3.12"
 
 
-def test_python2_to_3_is_still_unsupported_until_the_sandbox_can_run_27():
-    """Marking it supported before #22 and #23 would move the failure from a clear
-    422 at planning time into a baseline that cannot run - discovered mid-demo."""
-    from app.api.targets import _BY_ID
+def test_the_ui_receives_an_enabled_chess_target_and_the_real_runtime_pair(client):
+    """#22 and #23 are merged: UI selection must reach the 2.7/3.14 verifier."""
+    from app.sandbox.runtimes import for_target
 
-    assert _BY_ID["python2_to_3"].supported is False
+    response = client.get(f"{API}/migration-targets")
+    target = next(t for t in response.json() if t["target_id"] == "python2_to_3")
+    assert target["supported"] is True
+    assert target["unsupported_reason"] is None
+    assert target["target_python"] == "3.14"
+    pair = for_target(target["target_id"])
+    assert (pair.baseline.python, pair.candidate.python) == ("2.7", "3.14")
 
 
 def test_every_unsupported_reason_is_one_short_line():

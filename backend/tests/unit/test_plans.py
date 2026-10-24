@@ -70,9 +70,10 @@ def world(monkeypatch):
         from app.models.contracts import RepositoryRecord
 
         return RepositoryRecord(
-            repository_id=repo_id, name="legacy_orders",
-            snapshot_hash="sha256:abc", origin="demo_fixture", executable=True,
-            demo_fixture_id="legacy_orders", file_count=4, module_count=4,
+            repository_id=repo_id, name=state.get("fixture", "legacy_orders"),
+            snapshot_hash="sha256:abc", origin="demo_fixture",
+            executable=state.get("executable", True),
+            demo_fixture_id=state.get("fixture", "legacy_orders"), file_count=4, module_count=4,
             symbol_count=20, test_file_count=1, analysis_status="ok",
             created_at=datetime.now(UTC),
         )
@@ -97,6 +98,27 @@ def world(monkeypatch):
     monkeypatch.setattr(store_module, "save_plan", save_plan)
     monkeypatch.setattr(store_module, "supersede_open_plans", supersede_open_plans)
     return state
+
+
+async def test_chess_target_creates_and_persists_a_plan_for_a_trusted_repository(world):
+    world["fixture"] = "chess"
+    plan = await plans_module.create_plan(REPO, "python2_to_3")
+    assert plan.target_id == "python2_to_3"
+    assert plan.repository_id == REPO
+    assert plan.units
+    assert world["saved"] == [plan]
+
+
+@pytest.mark.parametrize("target", ["modern_python3", "python2_to_3"])
+async def test_enabling_chess_does_not_make_untrusted_repositories_executable(world, target):
+    from app.errors import REPOSITORY_NOT_EXECUTABLE, AppError
+
+    world["executable"] = False
+    with pytest.raises(AppError) as error:
+        await plans_module.create_plan(REPO, target)
+    assert error.value.code == REPOSITORY_NOT_EXECUTABLE
+    assert error.value.status_code == 409
+    assert world["saved"] == []
 
 
 def unit(plan, unit_id):

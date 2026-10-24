@@ -1820,3 +1820,16 @@ the journal; this half stops them happening.
   wired up.
 
 732 offline backend tests (8 new), 22 container tests, ruff clean. No live Gemini calls.
+
+## 24 Oct 2026 — Dev 4: unblock the chess demo target (#21)
+
+Enabled `python2_to_3` now that #22 and #23 are merged. The target advertises Python
+3.14 and resolves to the existing 2.7-baseline/3.14-candidate runtime pair. Unsupported
+target errors list both supported Python targets. The repository's trusted-execution
+guard is unchanged; tests cover plan creation, persistence and rejection of untrusted
+repositories for both targets. Updated README and chess integration notes.
+
+751 offline tests and ruff passed. A missing database now produces the real 503 for
+chess planning rather than the obsolete unsupported-target 422. This enables the
+planning path; it is not evidence of a completed live model migration. The separate
+setup.py allowlist regression tests remain in PR #75.

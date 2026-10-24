@@ -31,10 +31,12 @@ the newer PyMongo async corrections in place of the supplied Motor instructions.
 > **Decision, 24 Oct 2026: chess is the only demo.** Axolotl is being built for one demo:
 > Will's terminal chess game, migrated from Python 2.7 to Python 3.14. There is no backup
 > demo. The `legacy_orders` fixture stays in the repo only as the test fixture the backend
-> tests and the sandbox run on, until chess replaces it ([#54](https://github.com/Prittstick22/axolotl/issues/54)). Chess can't be
-> migrated yet: the sandbox has no
-> Python 2.7 or 3.14 runtime, there are no chess behaviour cases, and `python2_to_3` is
-> unsupported. That work is tracked in [#30](https://github.com/Prittstick22/axolotl/issues/30); the full plan is in
+> tests and the sandbox run on, until chess replaces it ([#54](https://github.com/Prittstick22/axolotl/issues/54)).
+> The `python2_to_3` target is enabled: #22 supplies the Python 2.7/3.14 runners and
+> #23 supplies 24 chess behaviour cases with fixture-specific routing. Import a fresh
+> trusted chess copy to register those cases. This enables planning; a completed
+> model-generated migration still needs a real end-to-end run and its evidence
+> ([#4](https://github.com/Prittstick22/axolotl/issues/4)). The full plan is in
 > [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md). Planning documents describing the
 > orders demo reflect the earlier plan.
 

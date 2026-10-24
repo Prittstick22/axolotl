@@ -65,6 +65,9 @@ MODEL_UNAVAILABLE = "MODEL_UNAVAILABLE"
 # An interpreter image the plan's target needs cannot run here (#95). Checked before
 # the run exists, so no Argon call is spent on a candidate nothing could verify.
 RUNNER_UNAVAILABLE = "RUNNER_UNAVAILABLE"
+# Module docs are already being generated for this repository (#39). Its progress is
+# on GET /repositories/{id}/docs; a second start would pay for the same calls twice.
+DOCS_GENERATION_ACTIVE = "DOCS_GENERATION_ACTIVE"
 
 
 def _envelope(code: str, message: str, details: dict[str, Any] | None = None) -> dict[str, Any]:

@@ -802,3 +802,19 @@ No model changes. Three behaviours:
 And one error on two more endpoints: `POST /repositories/{id}/plans` and
 `POST /plans/{id}/runs` answer `409 SNAPSHOT_UNAVAILABLE` before any model call when this
 machine has no copy of the code.
+
+### Additive: module documentation (Dev 1, #39)
+
+Three endpoints and two collections, all new, so they merge immediately under §11.3:
+
+- `GET /repositories/{id}/docs`, `GET /runs/{id}/docs`, `POST /repositories/{id}/docs`
+  (202). Shapes in `docs/api-contracts.md`.
+- `module_docs`: one cached purpose per `(repository_id, path, source_hash)`.
+- `docs_generation`: one status document per repository.
+- One error code: `409 DOCS_GENERATION_ACTIVE`.
+
+Facts are computed from the trees on request and never stored, like #34.
+
+**For Dev 5 (#130):** each module has `legacy` and, on a run, `migrated`, each with
+structured `facts` and a ready-made `markdown`. Model-written text is labelled in both
+(`purpose.basis: model_generated`, and Argon's `change.summary`).

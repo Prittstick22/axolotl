@@ -27,6 +27,7 @@ parses one shape.
 | `UNSUPPORTED_TARGET` | 422 | Target unknown, or known with `supported=false` (**T-08**). |
 | `REPOSITORY_NOT_EXECUTABLE` | 409 | Plan requested for a ZIP upload; those are static-analysis only. |
 | `SNAPSHOT_UNAVAILABLE` | 409 | This machine has no copy of the repository's code: an upload imported on another laptop. Returned by re-indexing, and by creating a plan or starting a run **before any Argon call** (#84). Built-in fixtures never hit it: their copy is rebuilt from the checkout (#83). |
+| `DOCS_GENERATION_ACTIVE` | 409 | `POST /repositories/{id}/docs` while a generation is already running for that repository (#39). Its progress is on `GET /repositories/{id}/docs`. |
 | `INTEGRATION_UNAVAILABLE` | 503 | A collaborator's function isn't implemented yet. Names the owner in `details`. |
 | `MODEL_UNAVAILABLE` | 503 | Argon was called and failed: a spent quota, a rate limit that outlasted the wait, a dropped connection. The message says which (#47). |
 | `PLAN_NOT_FOUND` / `RUN_NOT_FOUND` / `ARTEFACT_NOT_FOUND` / `UNIT_NOT_FOUND` | 404 | Unknown id. |
@@ -91,6 +92,27 @@ All ✅ — implemented and exercised against the real cluster.
 Import sets `executable=True` **only** for the allowlisted fixture `legacy_orders`.
 Folder and ZIP uploads get `executable=False` and can never run. A folder upload's
 `paths` are relative to the folder and pass the same checks as ZIP member names.
+
+### Module docs — Dev 1 (#39)
+
+| Endpoint | Response |
+|---|---|
+| `GET /repositories/{repo_id}/docs` | `{repository_id, python, prose, modules: [{module_id, path, is_test, legacy: {facts, purpose, markdown}}], warnings}`. No model call. |
+| `GET /runs/{run_id}/docs` | The same, with `run_id`, `revision`, `python: {legacy, migrated}`, and per module `migrated: {facts, change, markdown}` or `null`. `change` is `{run_id, unit: {unit_id, status, attempts}, summary, dependencies}`. No model call. |
+| `POST /repositories/{repo_id}/docs` | **202** `{repository_id, prose}`, then generates the missing purposes in the background |
+
+- `facts` come from the parse tree (`basis: static_ast`): docstring as written,
+  public classes and methods, public functions with signatures, `depends_on`,
+  `packages`, `used_by`.
+- `purpose` is one model-written sentence per non-test module, from the legacy source,
+  `basis: model_generated`, or `null` until generated. `prose.state` is
+  `not_generated | generating | ready | partial | failed`, with `done` and `total`.
+- `change.summary` is Argon's own summary of the accepted patch, from the run journal.
+- Errors: 404 for an unknown repository or run; 409 `SNAPSHOT_UNAVAILABLE` when a tree
+  isn't on this machine; 409 `DOCS_GENERATION_ACTIVE`; 503 `MODEL_UNAVAILABLE` with no
+  key.
+- The export zip (`GET /runs/{id}/export`) carries the same pages under
+  `axolotl/docs/`, with cached purposes only: an export never calls a model.
 
 ### Search
 

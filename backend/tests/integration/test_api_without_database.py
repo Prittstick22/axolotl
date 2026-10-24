@@ -530,3 +530,115 @@ async def test_the_endpoint_itself_lets_no_held_out_value_through(monkeypatch):
                for c in body["verifications"][0]["comparisons"])
     assert any(c["case_id"] == "case_001" and c["old"]["value"] == "1.25"
                for c in body["verifications"][0]["comparisons"])
+
+
+# --------------------------------------------------------------------------
+# SHARED_CONTRACTS §11: search_index is composed on read, never stored
+# --------------------------------------------------------------------------
+
+async def test_one_repository_carries_its_indexing_progress(monkeypatch):
+    """So the Overview needs no second call (Dev 3's ask, acked 24 Oct)."""
+    from app.api import repositories
+    from app.search import progress
+
+    async def get_repository(repo_id):
+        return _a_repository(repo_id)
+
+    async def get(repo_id):
+        return {"repository_id": repo_id, "state": "indexing", "embedded": 40,
+                "total": 122, "reason": None, "described": 12}
+
+    monkeypatch.setattr(repositories.ingestion, "get_repository", get_repository)
+    monkeypatch.setattr(progress, "get", get)
+
+    record = await repositories.get_repository("repo_000000000001")
+
+    assert record.search_index == {"state": "indexing", "embedded": 40, "total": 122}
+    # Only the three agreed keys: the rest is the indexing endpoint's business.
+    assert set(record.search_index) == {"state", "embedded", "total"}
+
+
+async def test_a_repository_never_indexed_reports_nothing_rather_than_zero(monkeypatch):
+    """`null` and "0 of 0 embedded" are different claims."""
+    from app.api import repositories
+    from app.search import progress
+
+    async def get_repository(repo_id):
+        return _a_repository(repo_id)
+
+    async def get(repo_id):
+        return None
+
+    monkeypatch.setattr(repositories.ingestion, "get_repository", get_repository)
+    monkeypatch.setattr(progress, "get", get)
+
+    record = await repositories.get_repository("repo_000000000001")
+    assert record.search_index is None
+
+
+async def test_an_unreadable_status_does_not_take_the_repository_down(monkeypatch):
+    from app.api import repositories
+    from app.search import progress
+
+    async def get_repository(repo_id):
+        return _a_repository(repo_id)
+
+    async def explode(repo_id):
+        raise RuntimeError("search_index_status is unreachable")
+
+    monkeypatch.setattr(repositories.ingestion, "get_repository", get_repository)
+    monkeypatch.setattr(progress, "get", explode)
+
+    record = await repositories.get_repository("repo_000000000001")
+    assert record.search_index is None
+    assert record.repository_id == "repo_000000000001"
+
+
+async def test_the_repository_list_does_not_read_progress_at_all(monkeypatch):
+    """`progress.get()` is a query per repository and writes when it finds indexing a
+    restart interrupted, so filling a list would be N reads and up to N writes."""
+    from app.api import repositories
+    from app.search import progress
+
+    called: list[str] = []
+
+    async def list_repositories():
+        return [_a_repository("repo_000000000001"), _a_repository("repo_000000000002")]
+
+    async def get(repo_id):
+        called.append(repo_id)
+        return {"state": "ready", "embedded": 40, "total": 40}
+
+    monkeypatch.setattr(repositories.ingestion, "list_repositories", list_repositories)
+    monkeypatch.setattr(progress, "get", get)
+
+    records = await repositories.list_repositories()
+
+    assert called == [], "the list endpoint read indexing status per repository"
+    assert all(r.search_index is None for r in records)
+
+
+def test_search_index_is_not_persisted_on_the_record():
+    """A record is written once at import and indexing finishes after it, so a stored
+    copy would be stale within seconds and stale for good."""
+    import inspect
+
+    from app.ingestion import _persist
+
+    source = inspect.getsource(_persist)
+    assert "search_index" not in source, (
+        "import is writing search_index into the repositories document"
+    )
+
+
+def _a_repository(repo_id: str):
+    from datetime import UTC, datetime
+
+    from app.models.contracts import RepositoryRecord
+
+    return RepositoryRecord(
+        repository_id=repo_id, name="chess", snapshot_hash="sha256:abc",
+        origin="folder_upload", executable=True, demo_fixture_id="chess",
+        file_count=16, module_count=13, symbol_count=120, test_file_count=1,
+        analysis_status="ok", created_at=datetime.now(UTC),
+    )

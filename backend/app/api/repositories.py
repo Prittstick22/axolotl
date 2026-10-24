@@ -148,7 +148,31 @@ async def list_repositories() -> list[RepositoryRecord]:
 
 @router.get("/repositories/{repo_id}")
 async def get_repository(repo_id: str) -> RepositoryRecord:
-    return await ingestion.get_repository(repo_id)
+    """One repository, with its indexing progress attached (SHARED_CONTRACTS §11).
+
+    `search_index` is composed here and never stored: the record is written once at
+    import and indexing finishes after it, so a persisted copy would be stale within
+    seconds. `GET /repositories` deliberately leaves it null - `progress.get()` is a
+    query per repository, and it writes when it finds indexing a restart interrupted,
+    so filling a list would mean N reads and up to N writes for one page load.
+    """
+    record = await ingestion.get_repository(repo_id)
+
+    try:
+        from app.search import progress
+
+        status = await progress.get(repo_id)
+    except Exception as exc:  # noqa: BLE001 - a repository still reads without it
+        log.warning("could not read indexing status for %s: %s", repo_id, exc)
+        status = None
+
+    if status:
+        record.search_index = {
+            "state": status.get("state"),
+            "embedded": status.get("embedded"),
+            "total": status.get("total"),
+        }
+    return record
 
 
 @router.get("/repositories/{repo_id}/graph")

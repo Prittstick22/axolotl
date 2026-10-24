@@ -53,6 +53,12 @@ class RepositoryRecord(BaseModel):
     analysis_status: Literal["ok", "partial", "failed"]
     warnings: list[str] = []
     created_at: datetime
+    # Additive under §11 (Dev 3 proposed, Dev 2 acked 24 Oct): {state, embedded,
+    # total}, so the Overview does not need a second call. **Composed on read by
+    # GET /repositories/{id} and never stored** - a record is written once at import
+    # and indexing finishes after that, so a persisted copy would be stale within
+    # seconds. GET /repositories leaves it None; see SHARED_CONTRACTS §11.
+    search_index: dict[str, Any] | None = None
 
 
 class GraphNode(BaseModel):

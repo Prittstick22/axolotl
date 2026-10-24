@@ -470,7 +470,9 @@ Errors: `{"error": {"code": "SNAKE_CASE", "message": "...", "details": {}}}` wit
 | `GET /repositories/{repo_id}/graph` | Dev 3 | `?level=module&run_id=` | `GraphPayload` (status overlay comes from Dev 2's `get_unit_statuses(run_id)`) |
 | `GET /repositories/{repo_id}/modules/{module_id}` | Dev 3 | — | `ModuleDetail` |
 | `GET /repositories/{repo_id}/symbols/{symbol_id}` | Dev 3 | — | `SymbolRecord` + `{source}` |
-| `GET /repositories/{repo_id}/search` | Dev 3 | `?q=&mode=keyword|vector|hybrid&limit=10` | `{mode_used, native_hybrid: bool, hits: SearchHit[]}` |
+| `GET /repositories/{repo_id}/search` | Dev 3 | `?q=&mode=keyword|vector|hybrid&limit=10` | `{mode_used, native_hybrid: bool, hits: SearchHit[]}` — 503 `SEARCH_INDEX_NOT_READY` while an index is building **or** the repository is still being indexed; never an empty `hits` list for either, because "nothing matched" is a different answer |
+| `POST /repositories/{repo_id}/index` | Dev 3 | — | `{chunks, described, embedded, warnings}` — 409 `INDEXING_IN_PROGRESS` if indexing is already running, 409 `SNAPSHOT_UNAVAILABLE` if the snapshot is not on this machine |
+| `GET /repositories/{repo_id}/index` | Dev 3 | — | `{repository_id, state: "indexing"|"ready"|"failed"|null, embedded, total, reason}` — `state` is null when no indexing was ever recorded |
 | `GET /migration-targets` | Dev 2 | — | `MigrationTarget[]` |
 | `POST /repositories/{repo_id}/plans` | Dev 2 | `{target_id}` | `MigrationPlan` (status `draft`) — 422 `UNSUPPORTED_TARGET`, 409 `REPOSITORY_NOT_EXECUTABLE` |
 | `GET /plans/{plan_id}` | Dev 2 | — | `MigrationPlan` |
@@ -617,6 +619,7 @@ Database: `axolotl`. Dev 3 owns the client, index creation script (`app/persiste
 | `symbols` | Dev 3 | `(repository_id, symbol_id)` unique, `(repository_id, qualified_name)` |
 | `edges` | Dev 3 | `(repository_id, source_symbol_id)`, `(repository_id, target_symbol_id)` |
 | `code_chunks` | Dev 3 | `(repository_id, chunk_id)` unique; Atlas Search index `code_chunks_text`; Vector index `code_chunks_vector` |
+| `search_index_status` | Dev 3 | `repository_id` unique, index name `index_status_repository_unique` (one row per repository: indexing progress, not the Atlas index definitions) |
 | `migration_plans` | Dev 2 | `plan_id` unique |
 | `migration_runs` | Dev 2 | `run_id` unique, `(state, created_at)` |
 | `run_events` | Dev 2 | `(run_id, sequence)` unique |
@@ -682,3 +685,27 @@ Branching: short-lived `devN/<topic>` branches, PR into `main`, `main` must alwa
 `{declared_python: string|null, evidence: string[], runtime_verified: false, note: string}`.
 This does not alter RepositoryRecord or enable Python 2 execution. Implementation and
 UI are on the chess demo branch for integration-owner review before merge.
+
+### Additive: `search_index` on `RepositoryRecord` (Dev 3 proposed, Dev 2 acked 24 Oct)
+
+Agreed, additive and optional, so it merges immediately under §11.3:
+
+```python
+search_index: dict | None = None   # {state, embedded, total} or None
+```
+
+**Composed on read, never stored.** Three conditions, and the reasons matter more
+than the field:
+
+- `GET /repositories/{repo_id}` fills it from `search_index_status`. The Overview reads
+  one repository, which is the case Dev 3 raised, and it gets the value without a
+  second call.
+- `GET /repositories` leaves it `null`. `progress.get()` is one query per repository
+  **and writes** when it finds indexing that a restart interrupted, so filling the list
+  would turn one page load into N reads and up to N writes.
+- Nothing writes it into the `repositories` document. A record is written once at
+  import and indexing finishes after that, so a persisted copy would be wrong within
+  seconds and wrong for good.
+
+`GET /repositories/{repo_id}/index` stays the authority for live progress: it is the
+endpoint to poll, and the only one that reports `reason` for a failure.

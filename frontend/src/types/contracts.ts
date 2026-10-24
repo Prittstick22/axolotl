@@ -81,6 +81,13 @@ export interface RepositoryRecord {
   analysis_status: 'ok' | 'partial' | 'failed';
   warnings: string[];
   created_at: string;
+  /**
+   * Additive under SHARED_CONTRACTS §11. Filled by GET /repositories/{id} only, so
+   * the Overview needs no second call; null on GET /repositories and null when the
+   * repository was never indexed. GET /repositories/{id}/index is the authority for
+   * live progress and the only place a failure `reason` appears.
+   */
+  search_index?: { state: 'indexing' | 'ready' | 'failed'; embedded: number; total: number | null } | null;
 }
 
 /** GET /demo-fixtures */

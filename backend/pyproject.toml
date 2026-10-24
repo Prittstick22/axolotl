@@ -39,6 +39,13 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# A plain `uv run pytest` collected all 711 tests, 56 of them live. One live run costs
+# about 48 Gemini embedding calls, and the free tier allows 1000 a day - on 23 Oct a
+# debugging session spent a whole key's quota in an evening. Anyone running the suite
+# without knowing to pass `-m "not live"` would do the same, so the default excludes
+# them. Run them on purpose with `-m live`, or `-m "live or not live"` for everything.
+addopts = "-m 'not live'"
+
 pythonpath = ["."]
 markers = [
     "live: tests that call real external services (Atlas, Gemini); deselect with -m 'not live'",

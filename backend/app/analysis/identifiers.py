@@ -26,11 +26,7 @@ def new_repository_id() -> str:
     return REPOSITORY_PREFIX + secrets.token_hex(SHORT_ID_BYTES)
 
 
-def module_id_for(relative_path: str) -> str:
-    """`module_` + dotted name with `.` -> `__` (§3).
-
-    `pricing.py` -> `module_pricing`; `billing/tax.py` -> `module_billing__tax`.
-    """
+def _dotted(relative_path: str) -> str:
     path = PurePosixPath(str(relative_path).replace("\\", "/"))
     parts = list(path.parts)
     if parts and parts[-1].endswith(".py"):
@@ -38,13 +34,25 @@ def module_id_for(relative_path: str) -> str:
     # A package's __init__.py names the package itself.
     if parts and parts[-1] == "__init__":
         parts.pop()
-    dotted = ".".join(parts)
-    return MODULE_PREFIX + dotted.replace(".", "__")
+    return ".".join(parts)
+
+
+def module_id_for(relative_path: str) -> str:
+    """`module_` + dotted name with `.` -> `__` (§3).
+
+    `pricing.py` -> `module_pricing`; `billing/tax.py` -> `module_billing__tax`.
+    """
+    return MODULE_PREFIX + _dotted(relative_path).replace(".", "__")
 
 
 def dotted_name_for(relative_path: str) -> str:
-    """`billing/tax.py` -> `billing.tax`. The importable name, not the id."""
-    return module_id_for(relative_path).removeprefix(MODULE_PREFIX).replace("__", ".")
+    """`billing/tax.py` -> `billing.tax`. The importable name, not the id.
+
+    Read from the path, never decoded back from the id: the id writes `.` as `__`, so
+    a name that contains `__` itself (`pkg/__main__.py`) can't be decoded. It came
+    back as `pkg..main.`, and its relative imports resolved from there (#140).
+    """
+    return _dotted(relative_path)
 
 
 def external_id_for(package: str) -> str:

@@ -2001,3 +2001,21 @@ unit plus the final gate sum to the report's 288. Python `2.7 -> >=3.10`,
 `raw_input -> input`. 0 model calls. The export is now 51 files with `SUMMARY.md`.
 963 offline backend tests (10 new; counting every gate result instead of the last per
 gate fails one), ruff clean.
+
+## 24 Oct 2026 — Dev 1: a dunder file's dotted name comes from its path (#140)
+
+`dotted_name_for` rebuilt a module's importable name by decoding its id, replacing
+`__` with `.`. Ids write `.` as `__`, so a file whose own name contains `__` decoded
+wrongly: `local_chess/__main__.py` came back as `local_chess..main.`. Its
+`from .cli import ConsoleUI` then resolved to the package `local_chess` instead of
+`local_chess/cli.py`, and its symbols were named `local_chess..main..main` in search,
+Ask and the docs.
+
+Both functions now share one path-based `_dotted`: `module_id_for` encodes it as
+before, and `dotted_name_for` returns it as it is. **Module ids don't move** (pinned for
+seven paths), so units, plans and runs are untouched. Only dunder modules' symbol names,
+and the symbol, chunk and edge ids derived from them, change. The chess entry on the
+cluster is rebuilt under the same id afterwards.
+
+981 offline backend tests (16 new; decoding from the id again fails 5 of them), 25
+sandbox tests, ruff clean.

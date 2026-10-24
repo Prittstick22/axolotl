@@ -74,7 +74,12 @@ export default function Overview() {
         <div className="flex min-w-0 grow flex-col gap-2">
           <h1 className="font-mono text-2xl leading-tight font-medium">{r.name}</h1>
           <div className="flex flex-wrap gap-x-8 gap-y-2">
-            <Field label="Origin">{r.origin === 'demo_fixture' ? 'Demo fixture, trusted' : `${r.origin === 'folder_upload' ? 'Folder' : 'ZIP'} upload, static analysis only`}</Field>
+            {/* An upload is executable only as an exact copy of a trusted tree, which also sets demo_fixture_id (#21). */}
+            <Field label="Origin">
+              {r.origin === 'demo_fixture'
+                ? 'Demo fixture, trusted'
+                : `${r.origin === 'folder_upload' ? 'Folder' : 'ZIP'} upload, ${r.executable ? `exact copy of the trusted ${r.demo_fixture_id} source` : 'static analysis only'}`}
+            </Field>
             <Field label="Snapshot">
               <span className="font-mono text-sm leading-6" title={r.snapshot_hash}>{r.snapshot_hash.slice(0, 19)}</span>
             </Field>

@@ -47,7 +47,8 @@ export default function NewMigration() {
       </div>
       <div className="flex items-start gap-2 rounded-md border bg-card px-4 py-3">
         <InfoIcon size={20} aria-hidden className="flex-none text-muted-foreground" />
-        <span>Uploads are analysed statically and never run. Only trusted demo fixtures can be migrated.</span>
+        {/* backend/app/ingestion/trust.py: an upload can run only when every file exactly matches a trusted tree in the repo. */}
+        <span>Uploads are analysed statically and never run, unless the upload is an exact copy of a trusted demo project, such as chess. Only demo fixtures and those exact copies can be migrated.</span>
       </div>
 
       <form
@@ -76,7 +77,7 @@ export default function NewMigration() {
             </Choice>
           ))}
           <Choice name="source" value={FOLDER} checked={source === FOLDER} onPick={pick} error={errorOn(FOLDER)} title="Upload a folder">
-            Pick the project’s top folder. Up to 500 files and 50 MB. Static analysis only, so it can’t be migrated.
+            Pick the project’s top folder. Up to 500 files and 50 MB. Static analysis only, unless it’s an exact copy of a trusted demo project.
           </Choice>
           {source === FOLDER && (
             <div className="flex flex-col gap-2 pt-2">

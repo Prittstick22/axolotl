@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { RunEvent, UnitRunState } from '@/types/contracts';
 
-import { eventRows, field } from './events';
+import { eventRows, field, terminalLines } from './events';
 import { attemptOf } from './run';
 
 // Payload shapes from run_bb0da2e79534.
@@ -80,5 +80,27 @@ describe('field', () => {
     expect(field('{"summary": "Add hints", "rationale": "Keep the Decimal ro', 'rationale')).toBe('Keep the Decimal ro');
     expect(field('{"accepted": false, "errors": ["x', 'accepted')).toBe(false);
     expect(field('{"files": [', 'summary')).toBeUndefined();
+  });
+});
+
+describe('terminalLines', () => {
+  it('has a line for every event but the empty Argon turn, folded ones included', () => {
+    expect(terminalLines(log, name).map((l) => [l.type, l.text, l.fail])).toEqual([
+      ['agent_tool_call', 'get_module_source orders.py', false],
+      ['agent_tool_result', 'get_module_source ok', false],
+      ['agent_tool_call', 'propose_patch Modernise storage.py with type hints', false],
+      ['patch_proposed', 'storage.py: Modernise storage.py with type hints', false],
+      ['patch_applied', 'storage.py as rev_9609090a4a3c', false],
+      ['agent_tool_result', 'propose_patch ok {"accepted": true, "workspace_revision": "rev_9609090a4a3c", "errors": []}', false],
+      ['verification_started', 'storage.py, attempt 1', false],
+      ['gate_result', 'storage.py, Compile passed', false],
+      ['gate_result', 'storage.py, Differential skipped, required', false],
+      ['gate_result', 'storage.py, Existing tests 12 passed in 0.23s', false],
+      ['verification_failed', 'storage.py, attempt 1', true],
+      ['agent_tool_call', 'finish_unit Verified; storage.py has no differential cases.', false],
+      ['agent_tool_result', 'finish_unit ok {"finished": true, "verified": false}', false],
+      ['unit_blocked', 'orders.py: dependency storage.py is blocked', true],
+      ['gate_result', 'final, Final integration 26 agree', false],
+    ]);
   });
 });

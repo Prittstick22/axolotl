@@ -2,9 +2,9 @@
 
 A review of `main` at `a27ac92`, made early on Saturday 24 Oct, updated the same day with the
 project manager's decisions and feature requests. It says what is finished and working, what is broken and what is
-left, and lists the product's features. Every open item is a GitHub issue. Issues are not
-assigned to people: the `dev 1` to `dev 5` labels and the `[Dev N]` in each title name the owning
-role, as in [TEAM_SPLIT](planning/TEAM_SPLIT.md).
+left, and lists the product's features. Every open item is a GitHub issue. The `dev 1` to
+`dev 5` labels and the `[Dev N]` in each title name the owning role; who is who is in the table
+below and in [TEAM_SPLIT](planning/TEAM_SPLIT.md).
 
 | Label | Meaning |
 |---|---|
@@ -19,13 +19,15 @@ MVP tickets are assigned on GitHub (24 Oct). Feature tickets aren't assigned yet
 someone picked one up themselves. Tickets with no `dev N` label have no obvious owner: anyone can
 pick them up.
 
-| Role | GitHub |
-|---|---|
-| Dev 1 (also project manager) | `Prittstick22` |
-| Dev 2 | `mh-husssain` |
-| Dev 3 | `Caroline3110` |
-| Dev 4 | `WilliamParis1` |
-| Dev 5 | `PanotAbhay` |
+| Role | Name | GitHub |
+|---|---|---|
+| Dev 1 (also project manager) | Dev | `Prittstick22` |
+| Dev 2 | Mo | `mh-husssain` |
+| Dev 3 | Caroline | `Caroline3110` |
+| Dev 4 | William (Will) | `WilliamParis1` |
+| Dev 5 | Abhay | `PanotAbhay` |
+
+The repository is public (24 Oct), by decision. Never commit `.env` or any key.
 
 Time left: feature freeze **Sat 22:00**, submission **Sun 10:45** (cutoff 12:00).
 

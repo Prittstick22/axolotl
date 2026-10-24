@@ -205,3 +205,53 @@ export function eventRows(log: RunEvent[], name: (id: string) => string) {
   }
   return { rows, gates, attempts };
 }
+
+export type TerminalLine = { sequence: number; timestamp: string; type: string; text: string; fail: boolean };
+const RESULT_CHARS = 120;
+
+/**
+ * Every recorded event as one line, the ones the log folds away included (#38). The text is read from
+ * the event and nothing else, so there is no made-up progress. Turns where Argon only called tools have
+ * no text and no line.
+ */
+export function terminalLines(log: RunEvent[], name: (id: string) => string): TerminalLine[] {
+  const rows = new Map(eventRows(log, name).rows.map((r) => [r.sequence, r]));
+  return log.flatMap((e) => {
+    const p = e.payload;
+    const row = rows.get(e.sequence);
+    const unit = e.unit_id ? name(e.unit_id) : '';
+    let text = row?.text ?? '';
+    let fail = row?.kind === 'fail';
+    switch (e.event_type) {
+      case 'agent_turn':
+        if (!row) return [];
+        break;
+      case 'agent_tool_call':
+        text = [str(p.tool), text].filter(Boolean).join(' ');
+        break;
+      case 'agent_tool_result': {
+        // get_module_source returns the whole module, which would fill the panel. Errors stay whole.
+        const result = str(p.result_excerpt);
+        fail = p.ok === false;
+        const cut = !fail && result.length > RESULT_CHARS;
+        text = [str(p.tool), fail ? 'error' : 'ok', cut ? `${result.slice(0, RESULT_CHARS)}…` : result].filter(Boolean).join(' ');
+        break;
+      }
+      case 'patch_proposed':
+        text = `${list(p.files).join(', ')}: ${str(p.summary)}`;
+        break;
+      case 'patch_applied':
+        text = `${unit} as ${str(p.workspace_revision)}`;
+        break;
+      case 'verification_started':
+        text = `${unit}, attempt ${e.attempt ?? 1}`;
+        break;
+      case 'gate_result': {
+        const g = gateChip(p);
+        fail = g.status === 'failed';
+        text = `${unit || 'final'}, ${g.label} ${g.summary || g.value}`;
+      }
+    }
+    return [{ sequence: e.sequence, timestamp: e.timestamp, type: e.event_type, text, fail }];
+  });
+}

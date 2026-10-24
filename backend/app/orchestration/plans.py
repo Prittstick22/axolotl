@@ -17,6 +17,7 @@ from app.errors import (
     MODEL_UNAVAILABLE,
     PLAN_ALREADY_DECIDED,
     REPOSITORY_NOT_EXECUTABLE,
+    SNAPSHOT_UNAVAILABLE,
     AppError,
 )
 from app.models.contracts import MigrationPlan, MigrationUnit, PlanProposal
@@ -67,6 +68,7 @@ async def create_plan(repo_id: str, target_id: str) -> MigrationPlan:
             status_code=409,
             details={"repository_id": repo_id, "origin": repository.origin},
         )
+    require_snapshot(repo_id)
 
     units = build_units(graph, ports.files_by_module(graph))
     cases_known = await _apply_visible_case_counts(repo_id, units)
@@ -115,6 +117,23 @@ async def create_plan(repo_id: str, target_id: str) -> MigrationPlan:
     await store.save_plan(plan)
     await store.supersede_open_plans(repo_id, except_plan_id=plan.plan_id)
     return plan
+
+
+def require_snapshot(repo_id: str) -> None:
+    """409 before any model call when this machine cannot run the code (#84).
+
+    Records are shared through Atlas but a snapshot stays on the machine that imported
+    it, so on any other laptop a plan cost an Argon call and its run then failed copying
+    the baseline. Built-in fixtures pass: `snapshot_path` rebuilds them from the checkout.
+    """
+    if not ports.snapshot_available(repo_id):
+        raise AppError(
+            SNAPSHOT_UNAVAILABLE,
+            "This repository's code isn't on this machine: snapshots stay on the "
+            "machine that imported them. Import it again here to plan or run it.",
+            status_code=409,
+            details={"repository_id": repo_id},
+        )
 
 
 async def _ask_argon(

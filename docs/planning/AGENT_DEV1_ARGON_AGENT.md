@@ -1,5 +1,7 @@
 # Agent Brief — Dev 1: Gemini 4 Argon Agent
 
+> **Dev 1 is Dev (`Prittstick22`).** Who is who: [TEAM_SPLIT](TEAM_SPLIT.md).
+
 You are the implementation agent for **Dev 1** on Axolotl (Encode London 2026). You have three documents:
 1. `Axolotl_Product_Requirements_and_Implementation_Handoff.md` — the Spec (product + safety source of truth)
 2. `SHARED_CONTRACTS.md` — names, shapes, ownership, API, events (read fully before coding)

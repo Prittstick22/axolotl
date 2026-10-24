@@ -16,7 +16,9 @@ Nothing here imports or executes the analysed code.
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import secrets
 import shutil
 import zipfile
 from datetime import UTC, datetime
@@ -24,9 +26,15 @@ from pathlib import Path
 from typing import Any
 
 from app.analysis.astwalk import ModuleAnalysis, analyse_module
-from app.analysis.identifiers import hash_file, new_repository_id, snapshot_hash_for
+from app.analysis.identifiers import (
+    REPOSITORY_PREFIX,
+    SHORT_ID_BYTES,
+    hash_file,
+    new_repository_id,
+    snapshot_hash_for,
+)
 from app.config import get_settings
-from app.errors import VALIDATION_ERROR, AppError, database_unavailable
+from app.errors import NOT_FOUND, VALIDATION_ERROR, AppError, database_unavailable
 from app.graph.builder import add_test_target_edges, build_edges, build_nodes
 from app.ingestion import trust
 from app.ingestion.safety import (
@@ -44,12 +52,22 @@ log = logging.getLogger(__name__)
 
 # The ONLY executable source. Spec §3.4: executable migration is enabled for
 # allowlisted trusted fixtures and nothing else.
+# Chess is listed first: it is the demo, and New Migration preselects the first entry.
 DEMO_FIXTURES: dict[str, dict[str, str]] = {
+    "chess": {
+        "demo_fixture_id": "chess",
+        "name": "chess",
+        "description": (
+            "William's terminal chess game, written for Python 2.7, with its rules and "
+            "terminal-session tests. The demo: migrate it to Python 3.14."
+        ),
+        "relative_path": "demo/chess",
+    },
     "legacy_orders": {
         "demo_fixture_id": "legacy_orders",
         "name": "legacy_orders",
         "description": (
-            "A small legacy-style Python 3 order service with a deliberately subtle "
+            "The test fixture: a small Python 3 order service with a deliberately subtle "
             "discount/tax/rounding rule. Six modules, no external dependencies."
         ),
         "relative_path": "demo/legacy_orders",
@@ -86,10 +104,81 @@ async def list_demo_fixtures() -> list[dict[str, str]]:
     ]
 
 
+def fixture_repository_id(demo_fixture_id: str) -> str:
+    """The one repository id for this fixture's content in this checkout (#82).
+
+    Records are shared through Atlas, so a random id per import gave every laptop its
+    own copy of the same fixture. Derived from the normalised tree hash: line endings
+    don't change it, any real change to the fixture does, and the id keeps the usual
+    `repo_` + 12 hex shape.
+    """
+    source = fixture_path(demo_fixture_id)
+    tree_hash = trust.normalised_tree_hash(source)
+    if tree_hash is None:
+        raise AppError(
+            VALIDATION_ERROR, f"Fixture directory not found: {source}", status_code=500
+        )
+    return _fixture_id_for(demo_fixture_id, tree_hash)
+
+
+def _fixture_id_for(demo_fixture_id: str, tree_hash: str) -> str:
+    digest = hashlib.sha256(f"fixture:{demo_fixture_id}:{tree_hash}".encode()).hexdigest()
+    return REPOSITORY_PREFIX + digest[: SHORT_ID_BYTES * 2]
+
+
 def snapshot_path(repo_id: str) -> Path:
-    """Read-only baseline tree for this repository (SHARED_CONTRACTS §8, sync)."""
+    """Read-only baseline tree for this repository (SHARED_CONTRACTS §8, sync).
+
+    Snapshots stay on the machine that imported them. A built-in fixture's is the one
+    exception: every checkout has the source, so when this machine has no copy it is
+    rebuilt from the checkout (#83), and a fixture imported on one laptop runs on all.
+    """
     root = Path(get_settings().workspace_root).expanduser()
-    return root / "snapshots" / repo_id
+    path = root / "snapshots" / repo_id
+    if not path.is_dir():
+        _rebuild_fixture_snapshot(repo_id, path)
+    return path
+
+
+def snapshot_available(repo_id: str) -> bool:
+    """True when this machine can read, run or re-index the repository's code (#84)."""
+    return snapshot_path(repo_id).is_dir()
+
+
+def _rebuild_fixture_snapshot(repo_id: str, path: Path) -> None:
+    """Rebuild `path` if `repo_id` is a built-in fixture's id for this checkout.
+
+    The id is derived from the content, so a match means the checkout holds exactly
+    what was imported. A fixture changed since the import gives a different id, nothing
+    is rebuilt, and the repository reads as "not on this machine" like any upload.
+    """
+    for demo_fixture_id in DEMO_FIXTURES:
+        source = fixture_path(demo_fixture_id)
+        tree_hash = trust.normalised_tree_hash(source)
+        if tree_hash is None or _fixture_id_for(demo_fixture_id, tree_hash) != repo_id:
+            continue
+
+        # Built beside the destination and renamed into place, so a reader never sees
+        # half a snapshot. If two requests race, the second rename fails and its copy
+        # is thrown away.
+        staging = path.with_name(f".{repo_id}.{secrets.token_hex(4)}")
+        try:
+            staging.mkdir(parents=True)
+            _write_fixture_snapshot(source, staging)
+            if trust.normalised_tree_hash(staging) != tree_hash:
+                log.warning("%s changed while it was being copied; not rebuilt", source)
+                return
+            staging.rename(path)
+        except OSError as exc:
+            if not path.is_dir():
+                log.warning("could not rebuild the %s snapshot: %s", demo_fixture_id, exc)
+            return
+        finally:
+            _remove_tree(staging)
+        _make_read_only(path)
+        log.info("rebuilt the %s snapshot for %s from this checkout", demo_fixture_id,
+                 repo_id)
+        return
 
 
 async def get_repository(repo_id: str) -> RepositoryRecord:
@@ -130,7 +219,17 @@ async def import_repository(
     # not exist anywhere (§9: 503 DATABASE_UNAVAILABLE, no half-done work).
     await _require_database()
 
-    repository_id = new_repository_id()
+    if demo_fixture_id:
+        # One repository per fixture content (#82). Importing it again, from any
+        # laptop, returns the existing one: no re-analysis, re-indexing or model calls.
+        repository_id = fixture_repository_id(demo_fixture_id)
+        existing = await _existing_repository(repository_id)
+        if existing is not None:
+            snapshot_path(repository_id)  # rebuilds this machine's copy if missing
+            log.info("%s is already imported as %s", demo_fixture_id, repository_id)
+            return existing
+    else:
+        repository_id = new_repository_id()
     destination = snapshot_path(repository_id)
     destination.mkdir(parents=True, exist_ok=True)
     try:
@@ -143,6 +242,15 @@ async def import_repository(
         # A rejected archive, nothing importable, or Atlas dropping mid-import: the
         # snapshot was never accepted, so it must not outlive the failure.
         shutil.rmtree(destination, ignore_errors=True)
+        raise
+
+
+async def _existing_repository(repo_id: str) -> RepositoryRecord | None:
+    try:
+        return await graphstore.get_repository(repo_id)
+    except AppError as exc:
+        if exc.code == NOT_FOUND:
+            return None
         raise
 
 
@@ -164,7 +272,7 @@ async def _import_into(
     if demo_fixture_id:
         source = fixture_path(demo_fixture_id)
         _assert_held_out_cases_are_outside(source)
-        copied = _copy_tree(source, destination)
+        copied = _fixture_snapshot(source, destination)
         origin, executable = "demo_fixture", True
         display_name = name or DEMO_FIXTURES[demo_fixture_id]["name"]
     elif folder:
@@ -288,13 +396,33 @@ def _assert_held_out_cases_are_outside(fixture_dir: Path) -> None:
         )
 
 
-def _copy_tree(source: Path, destination: Path) -> list[str]:
-    """Copy a trusted fixture, skipping ignored paths. Returns relative paths."""
+def _fixture_snapshot(source: Path, destination: Path) -> list[str]:
+    """Make `destination` an exact copy of a trusted fixture. Returns relative paths.
+
+    `snapshot_path` may already have rebuilt it from this checkout, and a copy left by
+    an earlier import against another database may be there too. Either is kept only
+    if it is the same content; anything else is replaced.
+    """
     if not source.is_dir():
         raise AppError(
             VALIDATION_ERROR, f"Fixture directory not found: {source}", status_code=500
         )
+    if trust.normalised_tree_hash(destination) != trust.normalised_tree_hash(source):
+        _remove_tree(destination)
+        destination.mkdir(parents=True)
+        _write_fixture_snapshot(source, destination)
+    return _snapshot_files(destination)
 
+
+def _write_fixture_snapshot(source: Path, destination: Path) -> list[str]:
+    """Copy a trusted fixture, skipping ignored paths. Returns relative paths.
+
+    Line endings are written as LF. A fixture's snapshot is then the same bytes on
+    every laptop, whatever each checkout did to its newlines, so its recorded
+    `snapshot_hash` holds wherever it is rebuilt (T-09). `.gitattributes` already
+    checks these files out as LF; this covers a stray CRLF save. See trust.py for
+    why the two line endings cannot differ in what Python does.
+    """
     copied: list[str] = []
     for path in sorted(source.rglob("*")):
         if not path.is_file() or path.is_symlink():
@@ -304,7 +432,7 @@ def _copy_tree(source: Path, destination: Path) -> list[str]:
             continue
         target = destination / relative
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(path, target)
+        target.write_bytes(path.read_bytes().replace(b"\r\n", b"\n"))
         copied.append(relative)
         if len(copied) > MAX_FILES:
             raise AppError(
@@ -312,6 +440,26 @@ def _copy_tree(source: Path, destination: Path) -> list[str]:
                 f"Fixture holds more than {MAX_FILES} files", status_code=422,
             )
     return copied
+
+
+def _snapshot_files(root: Path) -> list[str]:
+    return [
+        path.relative_to(root).as_posix()
+        for path in sorted(root.rglob("*"))
+        if path.is_file() and not path.is_symlink()
+    ]
+
+
+def _remove_tree(root: Path) -> None:
+    """Delete a snapshot folder, including one `_make_read_only` has locked."""
+    if not root.exists():
+        return
+    for path in [root, *root.rglob("*")]:
+        try:
+            path.chmod(0o755 if path.is_dir() else 0o644)
+        except OSError:
+            pass
+    shutil.rmtree(root, ignore_errors=True)
 
 
 def _extract_zip(zip_path: Path | None, destination: Path) -> list[str]:

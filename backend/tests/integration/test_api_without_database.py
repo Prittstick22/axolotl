@@ -41,6 +41,7 @@ DB_BACKED = [
     ("get", f"{API}/runs/run_000000000001/artefacts", None),
     ("get", f"{API}/runs/run_000000000001/units/unit_pricing", None),
     ("get", f"{API}/runs/run_000000000001/diff", None),
+    ("get", f"{API}/runs/run_000000000001/export", None),
     ("post", f"{API}/plans/plan_000000000001/approve", {"approved": True}),
     ("post", f"{API}/plans/plan_000000000001/runs", None),
     ("post", f"{API}/runs/run_000000000001/cancel", None),

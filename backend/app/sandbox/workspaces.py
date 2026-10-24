@@ -112,7 +112,7 @@ async def apply_patch(
                         errors=["the patch contains no files"])
 
     for file_patch in patch.files:
-        relative = file_patch.path.replace("\\", "/").lstrip("./")
+        relative = file_patch.path.replace("\\", "/").removeprefix("./")
 
         if relative not in allowed:
             errors.append(

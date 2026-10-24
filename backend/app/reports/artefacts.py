@@ -6,6 +6,11 @@ Three kinds, per SHARED_CONTRACTS §6 (`kind: "patch" | "report" | "archive"`):
   archive  zip of the final accepted tree
   report   the RunReport as JSON
 
+The project export (#40) is the migrated project itself, plus a MIGRATION.md and the
+report under `axolotl/`. Not the patch: a download labelled "migrated project" that
+delivered a diff was the bug. It is built on request and not recorded, so §6 keeps
+its three kinds.
+
 Files live on disk under `WORKSPACE_ROOT/artefacts/<run_id>/`. Only metadata, the path
 and a sha256 go in Mongo - never blobs (§9).
 
@@ -24,7 +29,8 @@ from pathlib import Path
 from typing import Any
 
 from app.config import get_settings
-from app.models.contracts import RunReport, RunSummary
+from app.ingestion.safety import is_ignored
+from app.models.contracts import MigrationPlan, RunReport, RunSummary
 from app.orchestration import ports, store
 from app.orchestration.ids import new_artefact_id
 
@@ -107,12 +113,73 @@ async def write_archive_artefact(
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
         for item in sorted(tree.rglob("*")):
             if item.is_file() and "__pycache__" not in item.parts:
-                info = zipfile.ZipInfo(str(item.relative_to(tree)).replace("\\", "/"))
-                info.date_time = (1980, 1, 1, 0, 0, 0)
-                info.compress_type = zipfile.ZIP_DEFLATED
-                archive.writestr(info, item.read_bytes())
+                _add(archive, item.relative_to(tree).as_posix(), item.read_bytes())
 
     return await _record(run.run_id, "archive", path)
+
+
+async def write_export(
+    report: RunReport, plan: MigrationPlan, revision: str, tree: Path
+) -> Path:
+    """#40: the migrated project at `revision`, with the run's files under `axolotl/`.
+
+    Only the project. The tree is a copy of the snapshot, which ingestion already
+    filtered and which cases.py checks for held-out cases; the same filter runs again
+    here, so a cache or a `.env` written into the tree since cannot ship.
+
+    The diff is deliberately **not** in here. People clicked a download expecting the
+    migrated codebase and got `migration.patch`, so the zip is now the project and the
+    patch stays its own artefact (`kind: "patch"`), downloaded on its own.
+    """
+    path = artefact_root(report.run_id) / "migrated_project.zip"
+
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
+        for item in sorted(tree.rglob("*")):
+            name = item.relative_to(tree).as_posix()
+            if item.is_file() and not is_ignored(name):
+                _add(archive, name, item.read_bytes())
+        _add(archive, "axolotl/MIGRATION.md",
+             migration_notes(report, plan, revision).encode())
+        _add(archive, "axolotl/report.json", json.dumps(
+            report.model_dump(mode="json"), indent=2, sort_keys=True).encode())
+    return path
+
+
+def migration_notes(
+    report: RunReport, plan: MigrationPlan, revision: str
+) -> str:
+    """Which files were migrated and verified, and which still hold the legacy code.
+
+    A unit that was not accepted never reached `revision`: every attempt starts from a
+    fresh copy of the last accepted tree, so its files are exactly as imported.
+    """
+    files = {u.unit_id: u.file_paths for u in plan.units}
+    units = sorted(report.units, key=lambda u: plan.order.index(u.unit_id)
+                   if u.unit_id in plan.order else len(plan.order))
+    migrated = [f"- {p}" for u in units if u.status == "passed"
+                for p in files.get(u.unit_id, [])]
+    legacy = [f"- {p} ({u.status})" for u in units if u.status != "passed"
+              for p in files.get(u.unit_id, [])]
+    return "\n".join([
+        f"# Migrated to `{plan.target_id}` by Axolotl",
+        "",
+        f"Run `{report.run_id}`, verdict `{report.verdict}`, revision `{revision}`.",
+        "",
+        "## Migrated and verified",
+        "",
+        *(migrated or ["- None"]),
+        "",
+        "## Still legacy",
+        "",
+        *(legacy or ["- None. Every unit was migrated."]),
+        "",
+        "## What the verification means",
+        "",
+        *[f"- {c}" for c in report.coverage_caveats],
+        "",
+        "`report.json` is the full report.",
+        "",
+    ])
 
 
 async def write_report_artefact(report: RunReport) -> dict[str, Any]:
@@ -124,6 +191,13 @@ async def write_report_artefact(report: RunReport) -> dict[str, Any]:
         newline="\n",
     )
     return await _record(report.run_id, "report", path)
+
+
+def _add(archive: zipfile.ZipFile, name: str, data: bytes) -> None:
+    info = zipfile.ZipInfo(name)
+    info.date_time = (1980, 1, 1, 0, 0, 0)
+    info.compress_type = zipfile.ZIP_DEFLATED
+    archive.writestr(info, data)
 
 
 async def _record(

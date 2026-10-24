@@ -176,6 +176,24 @@ async def test_a_valid_patch_is_applied(world):
     assert ack.errors == []
 
 
+async def test_a_dotted_directory_keeps_its_dot(world):
+    """`.hidden/mod.py` is that path, not `hidden/mod.py` (lstrip("./") ate the dot)."""
+    ws = await create_workspace("run_1", "repo_1")
+    ack = await apply_patch(ws, patch_for(".hidden/mod.py", "x = 1\n"), [".hidden/mod.py"])
+
+    assert ack.accepted is True, ack.errors
+    assert (Path(ws.root) / ".hidden" / "mod.py").read_text() == "x = 1\n"
+    assert not (Path(ws.root) / "hidden").exists()
+
+
+async def test_a_leading_dot_slash_is_dropped(world):
+    ws = await create_workspace("run_1", "repo_1")
+    ack = await apply_patch(ws, patch_for("./pricing.py", "TAX = 2\n"), ALLOWED)
+
+    assert ack.accepted is True, ack.errors
+    assert (Path(ws.root) / "pricing.py").read_text() == "TAX = 2\n"
+
+
 # --------------------------------------------------------------------------
 # accepting and diffing
 # --------------------------------------------------------------------------

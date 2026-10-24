@@ -16,7 +16,7 @@ import { Link, useLocation, useOutletContext, useParams, useSearchParams } from 
 import { ApiError, cancelRun, getGraph, getPlan, listRunEvents } from '@/api/client';
 import { ConnectionBanner } from '@/components/ConnectionBanner';
 import { Button, buttonVariants } from '@/components/ui/button';
-import { eventRows, type EventRow, type GateChip } from '@/lib/events';
+import { eventRows, terminalLines, type EventRow, type GateChip } from '@/lib/events';
 import { attemptOf, CLOSING_WAIT_MS, isLive, POLL_MS, useRun } from '@/lib/run';
 import { GATE_STATUS, RUN_STATE, TONE_BORDER, TONE_TEXT, TONE_TINT } from '@/lib/status';
 import { GraphArea } from '@/screens/GraphScreen';
@@ -27,6 +27,8 @@ import type { RunEvent, RunSummary } from '@/types/contracts';
 const CLOSING = new Set(['report_generated', 'error']);
 const time = (iso: string) => new Date(iso).toLocaleTimeString('en-GB');
 const ROW_ICON = { event: CircleIcon, ok: CheckCircleIcon, wait: HourglassIcon, repair: ArrowClockwiseIcon, fail: XCircleIcon };
+// #38: the terminal is every recorded event as a plain line, for watching a run as it goes.
+const VIEWS = [[false, 'List'], [true, 'Terminal']] as const;
 
 /** Template: kit.css `.gate`. The summary, such as "12 passed in 0.23s", is in the tooltip. */
 function Gate({ gate }: { gate: GateChip }) {
@@ -51,17 +53,19 @@ function EventLine({ row }: { row: EventRow }) {
   const more = Boolean(row.detail?.length || row.gates?.length);
   const caret = more && !fail;
   const Icon = caret ? CaretRightIcon : ROW_ICON[row.kind];
-  const box = 'flex h-9 items-center gap-2 px-4 text-sm whitespace-nowrap';
+  // A failure with nothing to expand (an error, a blocked unit, a 429) wraps, so its reason reads in full.
+  const wrap = fail && !more;
+  const box = cn('flex gap-2 px-4 text-sm whitespace-nowrap', wrap ? 'min-h-9 items-start py-2' : 'h-9 items-center');
   const line = (
     <>
       <Icon
         size={16}
         aria-hidden
-        className={cn('flex-none', fail ? 'text-failed' : 'text-muted-foreground', caret && 'transition-transform group-open:rotate-90 motion-reduce:transition-none')}
+        className={cn('flex-none', wrap && 'mt-0.5', fail ? 'text-failed' : 'text-muted-foreground', caret && 'transition-transform group-open:rotate-90 motion-reduce:transition-none')}
       />
       <span className="font-mono text-muted-foreground">{time(row.timestamp)}</span>
       <span className={cn('font-mono font-medium', fail && 'text-failed')}>{row.name}</span>
-      <span className="min-w-0 flex-1 truncate text-muted-foreground">{row.text}</span>
+      <span className={cn('min-w-0 flex-1 text-muted-foreground', wrap ? 'break-words whitespace-normal' : 'truncate')}>{row.text}</span>
     </>
   );
   if (!more) {
@@ -156,6 +160,7 @@ function Dashboard({ repoId, run }: { repoId: string; run: RunSummary }) {
   const selected = picked === undefined ? (current?.module_ids[0] ?? null) : picked;
   const node = graph.data?.nodes.find((n) => n.id === selected);
   const [confirming, setConfirming] = useState(false);
+  const [terminal, setTerminal] = useState(false);
   const cancelButton = useRef<HTMLButtonElement>(null);
   const { search } = useLocation();
   const log = events.data ?? [];
@@ -255,9 +260,22 @@ function Dashboard({ repoId, run }: { repoId: string; run: RunSummary }) {
                 <p className="text-sm text-muted-foreground">{gates ? 'Verifying. Each gate reports here as it finishes.' : 'No gate results yet. Gates report as each unit is verified.'}</p>
               )}
             </section>
-            <div className="flex flex-none items-baseline justify-between gap-3 border-b px-4 py-3">
+            <div className="flex flex-none items-center gap-3 border-b px-4 py-2">
               <h2 className="text-sm font-medium text-muted-foreground">Events</h2>
-              <span className="text-sm text-muted-foreground">Newest at the bottom</span>
+              <span className="ml-auto text-sm text-muted-foreground">Newest at the bottom</span>
+              <div role="group" aria-label="Event view" className="flex h-8 flex-none overflow-hidden rounded-md border border-input">
+                {VIEWS.map(([value, label]) => (
+                  <button
+                    key={label}
+                    type="button"
+                    aria-pressed={value === terminal}
+                    onClick={() => setTerminal(value)}
+                    className="border-input px-3 text-sm font-medium text-muted-foreground transition-colors not-first:border-l focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-current aria-pressed:bg-foreground aria-pressed:text-card"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
             {/* column-reverse keeps the scroll pinned to the newest row as rows arrive; mb-auto keeps a short log at the top. */}
             {/* tabIndex: keyboard users scroll the log with the arrow keys (WCAG 2.1.1). */}
@@ -265,14 +283,26 @@ function Dashboard({ repoId, run }: { repoId: string; run: RunSummary }) {
               role="log"
               tabIndex={0}
               aria-label="Run events, newest last"
-              className="flex min-h-0 flex-1 flex-col-reverse overflow-y-auto focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+              className={cn(
+                'flex min-h-0 flex-1 flex-col-reverse overflow-y-auto focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring',
+                terminal && 'bg-code',
+              )}
             >
               <div className="mb-auto">
                 {events.isError && !log.length && <p className="px-4 py-3 text-sm text-muted-foreground">Couldn’t load the events: {events.error.message}</p>}
                 {events.isSuccess && !log.length && <p className="px-4 py-3 text-sm text-muted-foreground">No events yet. The run records one at each step.</p>}
-                {rows.map((row) => (
-                  <EventLine key={row.sequence} row={row} />
-                ))}
+                {terminal ? (
+                  // Wrapped lines hang under the text, past the 8-character time.
+                  <ol className="px-4 py-2 font-mono text-sm leading-6">
+                    {terminalLines(log, unit).map((l) => (
+                      <li key={l.sequence} className={cn('-indent-[9ch] pl-[9ch] break-words whitespace-pre-wrap', l.fail && 'text-failed')}>
+                        <span className={l.fail ? undefined : 'text-muted-foreground'}>{time(l.timestamp)}</span> <span className="font-medium">{l.type}</span> {l.text}
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  rows.map((row) => <EventLine key={row.sequence} row={row} />)
+                )}
               </div>
             </div>
             <p className="flex-none border-t px-4 py-3 text-sm text-muted-foreground">
@@ -292,8 +322,9 @@ export default function RunScreen() {
   const navSlot = useOutletContext<HTMLElement | null>();
   const runId = params.get('run');
   const run = useRun(runId);
-  // A status code means the API answered; only a network failure is a lost connection.
-  const lost = run.error instanceof ApiError && run.error.status === 0;
+  // Spec §9.3: once the run has loaded, any failed poll leaves old data on screen, so the banner says from when.
+  // Before that, only a network failure is a lost connection; an error the API answered shows as it is.
+  const lost = run.error instanceof ApiError && (run.error.status === 0 || Boolean(run.data));
 
   if (!runId) return <Empty repoId={repoId} search={params.size ? `?${params}` : ''} />;
   return (
@@ -316,7 +347,16 @@ export default function RunScreen() {
       {run.data ? (
         <Dashboard repoId={repoId} run={run.data} />
       ) : (
-        !lost && <p className="p-6 text-muted-foreground">{run.isError ? `Couldn’t load this run: ${run.error.message}` : 'Loading the run…'}</p>
+        !lost && (
+          <div className="flex flex-col items-start gap-3 p-6">
+            <p className="text-muted-foreground">{run.isError ? `Couldn’t load this run: ${run.error.message}` : 'Loading the run…'}</p>
+            {run.isError && (
+              <Button variant="outline" onClick={() => void run.refetch()}>
+                Try again
+              </Button>
+            )}
+          </div>
+        )
       )}
     </main>
   );

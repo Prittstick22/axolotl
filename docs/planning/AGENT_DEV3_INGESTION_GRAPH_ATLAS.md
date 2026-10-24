@@ -1,5 +1,7 @@
 # Agent Brief — Dev 3: Ingestion, Dependency Graph & MongoDB Atlas
 
+> **Dev 3 is Caroline (`Caroline3110`).** Who is who: [TEAM_SPLIT](TEAM_SPLIT.md).
+
 You are the implementation agent for **Dev 3** on Axolotl (Encode London 2026). You have three documents:
 1. `Axolotl_Product_Requirements_and_Implementation_Handoff.md` — the Spec
 2. `SHARED_CONTRACTS.md` — names, shapes, ownership

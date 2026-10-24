@@ -8,11 +8,19 @@ T-09 is the one worth having here: the snapshot hash must be reproducible, becau
 the whole immutable-baseline guarantee is built on it.
 """
 
+import os
+import shutil
+
 import pytest
 
 from app import ingestion
 from app.analysis.identifiers import snapshot_hash_for
+from app.errors import NOT_FOUND, AppError
 from app.persistence import graphstore
+
+# The `store` fixture replaces snapshot_path with a plain tmp directory; the rebuild
+# tests below need the real one.
+REAL_SNAPSHOT_PATH = ingestion.snapshot_path
 
 
 @pytest.fixture
@@ -25,6 +33,8 @@ def store(monkeypatch, tmp_path):
         return record
 
     async def get_repository(repo_id):
+        if repo_id not in saved["repositories"]:  # as graphstore does
+            raise AppError(NOT_FOUND, f"No repository {repo_id!r}", status_code=404)
         return saved["repositories"][repo_id]
 
     async def replace_symbols(repo_id, symbols):
@@ -263,10 +273,12 @@ async def test_the_snapshot_hash_is_reproducible(store):
         pytest.skip("demo fixture not present")
 
     first = await ingestion.import_repository(demo_fixture_id="legacy_orders")
+    store["repositories"].clear()  # as if into a fresh database
     second = await ingestion.import_repository(demo_fixture_id="legacy_orders")
 
     assert first.snapshot_hash == second.snapshot_hash
-    assert first.repository_id != second.repository_id
+    # #82: one repository per fixture content, so the id is reproducible too.
+    assert first.repository_id == second.repository_id
 
 
 def test_the_snapshot_hash_depends_on_content_and_layout():
@@ -365,3 +377,141 @@ async def test_the_test_module_s_imports_are_stored_but_not_scheduled(store):
 
     scheduling = to_networkx(_nodes_from_symbols(store["symbols"]), store["edges"])
     assert test_module not in scheduling.nodes()
+
+
+# --------------------------------------------------------------------------
+# built-in fixtures on a shared database (#81, #82, #83)
+# --------------------------------------------------------------------------
+
+async def test_chess_is_the_first_built_in_fixture():
+    """New Migration preselects the first entry, and chess is the demo."""
+    assert [f["demo_fixture_id"] for f in await ingestion.list_demo_fixtures()] == [
+        "chess", "legacy_orders",
+    ]
+
+
+async def test_the_chess_fixture_imports_executable_with_its_own_cases(store):
+    chess_folder()  # skips when the source is absent
+
+    record = await ingestion.import_repository(demo_fixture_id="chess")
+
+    assert record.origin == "demo_fixture"
+    assert record.executable is True
+    assert record.demo_fixture_id == "chess"
+    assert record.repository_id == ingestion.fixture_repository_id("chess")
+    cases = store["cases"]
+    assert sum(c.visibility == "visible" for c in cases) == 12
+    assert sum(c.visibility == "held_out" for c in cases) == 12
+    assert all(c.case_id.startswith("chess_") for c in cases)
+    assert not any(c.provenance == "demo/challenge_cases/held_out.json" for c in cases)
+
+
+async def test_importing_a_fixture_again_returns_the_existing_repository(
+    store, monkeypatch
+):
+    """From any laptop: no second analysis, no second index, no model calls."""
+    chess_folder()
+    first = await ingestion.import_repository(demo_fixture_id="chess")
+
+    def must_not_run(*args, **kwargs):
+        raise AssertionError("a re-import must not analyse or index again")
+
+    monkeypatch.setattr(ingestion, "_analyse", must_not_run)
+    second = await ingestion.import_repository(demo_fixture_id="chess")
+
+    assert second.repository_id == first.repository_id
+    assert list(store["repositories"]) == [first.repository_id]
+
+
+async def test_a_folder_upload_of_chess_still_gets_its_own_id(store):
+    """Only a fixture chosen by id is shared; an upload is an import event."""
+    record = await ingestion.import_repository(folder=chess_folder())
+    assert record.demo_fixture_id == "chess"
+    assert record.repository_id != ingestion.fixture_repository_id("chess")
+
+
+def copy_of_chess(destination, *, crlf=False):
+    source = ingestion.repo_root() / "demo" / "chess"
+    if not source.is_dir():
+        pytest.skip("chess source not present")
+    shutil.copytree(source, destination, ignore=shutil.ignore_patterns("__pycache__"))
+    if crlf:
+        for path in destination.rglob("*.py"):
+            path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+    return destination
+
+
+def use_fixture_tree(monkeypatch, tree):
+    real = ingestion.fixture_path
+    monkeypatch.setattr(
+        ingestion, "fixture_path",
+        lambda fixture_id: tree if fixture_id == "chess" else real(fixture_id),
+    )
+
+
+def test_the_fixture_id_ignores_line_endings_but_not_content(tmp_path, monkeypatch):
+    lf = copy_of_chess(tmp_path / "lf")
+    crlf = copy_of_chess(tmp_path / "crlf", crlf=True)
+
+    use_fixture_tree(monkeypatch, lf)
+    from_lf = ingestion.fixture_repository_id("chess")
+    use_fixture_tree(monkeypatch, crlf)
+    assert ingestion.fixture_repository_id("chess") == from_lf
+
+    (crlf / "local_chess" / "board.py").write_bytes(b"# changed\n")
+    changed = ingestion.fixture_repository_id("chess")
+    assert changed != from_lf
+    assert changed.startswith("repo_") and len(changed) == len("repo_") + 12
+
+
+def snapshot_hash_of(root):
+    from app.analysis.identifiers import hash_file
+
+    return snapshot_hash_for({
+        path.relative_to(root).as_posix(): hash_file(path)
+        for path in root.rglob("*") if path.is_file()
+    })
+
+
+async def test_a_laptop_without_the_snapshot_rebuilds_it_from_its_checkout(
+    store, tmp_path, monkeypatch
+):
+    """#83: the import was made elsewhere; this machine's copy is the same bytes."""
+    from app.config import get_settings
+
+    chess_folder()
+    record = await ingestion.import_repository(demo_fixture_id="chess")
+
+    monkeypatch.setattr(get_settings(), "workspace_root", str(tmp_path / "other_laptop"))
+    rebuilt = REAL_SNAPSHOT_PATH(record.repository_id)
+
+    assert rebuilt.is_dir()
+    assert snapshot_hash_of(rebuilt) == record.snapshot_hash
+    assert not os.access(rebuilt / "local_chess" / "board.py", os.W_OK)
+    assert [p.name for p in rebuilt.parent.iterdir()] == [record.repository_id]
+    assert ingestion.snapshot_available(record.repository_id)
+
+
+def test_a_fixture_that_changed_since_its_import_is_not_rebuilt(tmp_path, monkeypatch):
+    from app.config import get_settings
+
+    tree = copy_of_chess(tmp_path / "checkout")
+    use_fixture_tree(monkeypatch, tree)
+    imported_as = ingestion.fixture_repository_id("chess")
+    (tree / "local_chess" / "board.py").write_bytes(b"# someone edited chess\n")
+
+    monkeypatch.setattr(get_settings(), "workspace_root", str(tmp_path / "workspaces"))
+
+    assert not REAL_SNAPSHOT_PATH(imported_as).exists()
+    assert not ingestion.snapshot_available(imported_as)
+
+
+def test_an_upload_made_elsewhere_is_never_rebuilt(tmp_path, monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "workspace_root", str(tmp_path))
+
+    assert not REAL_SNAPSHOT_PATH("repo_000000000abc").exists()
+    assert not (tmp_path / "snapshots").exists() or not any(
+        (tmp_path / "snapshots").iterdir()
+    )

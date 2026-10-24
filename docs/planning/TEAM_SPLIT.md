@@ -2,6 +2,19 @@
 
 How to use: give **each developer's agent three files** — the original Spec, `SHARED_CONTRACTS.md`, and that developer's `AGENT_DEVn_*.md`.
 
+## Who is who
+
+| Role | Name | GitHub |
+|---|---|---|
+| Dev 1 (also project manager) | Dev | `Prittstick22` |
+| Dev 2 | Mo | `mh-husssain` |
+| Dev 3 | Caroline | `Caroline3110` |
+| Dev 4 | William (Will) | `WilliamParis1` |
+| Dev 5 | Abhay | `PanotAbhay` |
+
+`Dev N` in any doc, ticket title or `dev N` label means the person above. The repository
+is public (24 Oct), by decision.
+
 | Dev | Owns | Agent brief | Hand-off they produce |
 |---|---|---|---|
 | **Dev 1 — Argon Agent** | Gemini adapter, tool schemas, prompts, plan + migrate/repair loop | `AGENT_DEV1_ARGON_AGENT.md` | `docs/argon-agent.md`, DeepMind write-up |

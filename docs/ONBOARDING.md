@@ -10,6 +10,10 @@ Everything you need to pick up Axolotl. Fifteen minutes end to end.
 > The demo script, videos and presentation are demo work: not MVP, unassigned, done last.
 > What is left, by developer, is in [PROJECT_STATUS.md](PROJECT_STATUS.md).
 
+> **Who is who:** Dev 1 is Dev (`Prittstick22`, also project manager), Dev 2 is Mo (`mh-husssain`),
+> Dev 3 is Caroline (`Caroline3110`), Dev 4 is William (`WilliamParis1`) and Dev 5 is Abhay
+> (`PanotAbhay`). The repository is public, by decision; never commit `.env` or any key.
+
 ---
 
 ## 1. Get it running (5 min)
@@ -115,7 +119,7 @@ Its corollaries, which are not negotiable:
 Only edit files you own ([`architecture.md` §4](architecture.md#4-packages-and-owners)).
 Need a change elsewhere? Ask the owner, or propose it through SHARED_CONTRACTS §11.
 
-### Dev 1 — Argon agent · `app/agents/`
+### Dev 1 (Dev, `Prittstick22`) — Argon agent · `app/agents/`
 
 **Already there for you:** `agents/contexts.py` has `PlanContext`,
 `UnitSessionContext`, `UnitSessionOutcome` and the `UnitController` Protocol,
@@ -140,7 +144,7 @@ bug for a nicer demo (T-18 and the DEV1 brief both forbid it).
 **You're blocked by:** Dev 4's verifier, for a real pass/fail. Build against
 `run_verification()` returning inconclusive until it lands.
 
-### Dev 2 — Orchestrator & integration · `app/orchestration/`, `reports/`
+### Dev 2 (Mo, `mh-husssain`) — Orchestrator & integration · `app/orchestration/`, `reports/`
 
 **Done:** scheduler (SCC, eligibility, T-13), state machine, event journal, plans,
 `UnitControllerImpl`, run worker, store, all 15 §6 endpoints, 155 tests.
@@ -148,7 +152,7 @@ bug for a nicer demo (T-18 and the DEV1 brief both forbid it).
 **Left:** patch and archive artefacts, the T-16 diff-hash assertion, `get_unit_statuses`
 for Dev 3's graph overlay, scope-cut calls at each gate.
 
-### Dev 3 — Graph & Atlas · `app/persistence/`, `ingestion/`, `analysis/`, `graph/`, `search/`
+### Dev 3 (Caroline, `Caroline3110`) — Graph & Atlas · `app/persistence/`, `ingestion/`, `analysis/`, `graph/`, `search/`
 
 **Already there for you:** `persistence/db.py` has a working `AsyncMongoClient` with
 `get_db()`, `ping()` and `server_version()`. **It uses PyMongo's async client, not
@@ -183,7 +187,7 @@ node.unit_id = overlay.get(node.id, {}).get("unit_id")
 **Watch out:** exclude `demo/challenge_cases/` from anything you index or chunk, and
 assert that you did. Those are held-out.
 
-### Dev 4 — Verifier & sandbox · `app/sandbox/`, `app/verification/`, `runner/`, `demo/`
+### Dev 4 (William, `WilliamParis1`) — Verifier & sandbox · `app/sandbox/`, `app/verification/`, `runner/`, `demo/`
 
 **Changed 24 Oct:** chess is the MVP demo, so the dual-runtime sandbox and chess cases
 are MVP ([#22](https://github.com/Prittstick22/axolotl/issues/22), [#23](https://github.com/Prittstick22/axolotl/issues/23)). `legacy_orders` below is no longer a demo: it is
@@ -208,7 +212,7 @@ patch** — only the held-out differential catches it. That gap is the demo.
 `PYTHONPYCACHEPREFIX=/tmp/pycache`. pytest needs `PYTHONPATH=/code`, also set in the
 image. Both are already handled — see [`../runner/policy.md`](../runner/policy.md).
 
-### Dev 5 — Frontend · `frontend/`
+### Dev 5 (Abhay, `PanotAbhay`) — Frontend · `frontend/`
 
 **Already there for you:** `src/types/contracts.ts` is the full §4 mirror in snake_case.
 `src/api/client.ts` parses the error envelope into a thrown `ApiError` with `.code`.

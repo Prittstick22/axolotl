@@ -133,7 +133,7 @@ def test_the_fixture_list_does_not_need_atlas(client, atlas_gone):
     """It is read from disk, and says only what can be imported - nothing from Atlas."""
     response = client.get(f"{API}/demo-fixtures")
     assert response.status_code == 200
-    assert [f["demo_fixture_id"] for f in response.json()] == ["legacy_orders"]
+    assert [f["demo_fixture_id"] for f in response.json()] == ["chess", "legacy_orders"]
 
 
 def test_a_failed_import_removes_its_half_written_snapshot(monkeypatch, tmp_path: Path):
@@ -149,7 +149,11 @@ def test_a_failed_import_removes_its_half_written_snapshot(monkeypatch, tmp_path
         assert any(tmp_path.iterdir()), "the snapshot should exist mid-import"
         raise database_unavailable("MongoDB is unreachable (AutoReconnect)")
 
+    async def not_imported_yet(repo_id):
+        return None
+
     monkeypatch.setattr(ingestion, "_require_database", reachable)
+    monkeypatch.setattr(ingestion, "_existing_repository", not_imported_yet)
     monkeypatch.setattr(ingestion, "snapshot_path", lambda repo_id: tmp_path / repo_id)
     monkeypatch.setattr(ingestion, "_persist", atlas_drops)
 

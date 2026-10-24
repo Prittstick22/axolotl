@@ -36,8 +36,9 @@ start the live sequence until the target is enabled and a real end-to-end run su
 - `/api/v1/system/status`: MongoDB reachable, keyword and vector indexes ready,
   Gemini reachable with the intended model. Confirm that model ID in an actual
   run record. Do not claim a model merely because its name is configured.
-- `/api/v1/migration-targets`: `python2_to_3` supported. Import the exact trusted
-  `demo/chess` folder in advance, then confirm execution eligibility. Import and
+- `/api/v1/migration-targets`: `python2_to_3` supported. Import the built-in chess
+  fixture in advance, once, on the shared cluster: every laptop then opens the same
+  repository id. Confirm execution eligibility. Import and
   indexing can take minutes; neither belongs inside the timed demo.
 - Check `/api/v1/repositories/{repo_id}/index` is ready and has embeddings.
   Preserve query/generation quota; do not re-index repeatedly before presenting.

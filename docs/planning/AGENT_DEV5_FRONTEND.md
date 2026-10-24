@@ -1,5 +1,7 @@
 # Agent Brief — Dev 5: React Frontend, Demo & Videos
 
+> **Dev 5 is Abhay (`PanotAbhay`).** Who is who: [TEAM_SPLIT](TEAM_SPLIT.md).
+
 > **Changed 24 Oct 2026:** the demo script, the videos and the presentation are separate
 > demo work, not MVP and unassigned for now. The demo is chess (Python 2.7 → 3.14), the
 > only demo; `legacy_orders` below is only a test fixture. Chess is uploaded as a folder, so the folder upload screen is MVP

@@ -181,8 +181,9 @@ icons and IBM Plex, following the template in [`design/`](design/).
   valued. Routed at `run/:unitId`.
 - **08 Final report**: the verdict, what was migrated, the counterexamples and the
   NOT-A-PROOF statement.
-- The Search screen is the one still outstanding: the nav links `/search`, the route
-  renders a `Pending` placeholder, and the API behind it is live and tested.
+- **09 Search**: keyword, vector or hybrid search over the code chunks, each hit
+  showing its match method and its keyword and vector ranks, and leading to its
+  module on the graph. Routed at `search`.
 
 ## 5. Demo inputs
 
@@ -216,11 +217,17 @@ icons and IBM Plex, following the template in [`design/`](design/).
   where keyword search alone ranks the wrong function first.
 - **Live agent checks**: two `gemini-4-argon` tests passed (declared-tool handshake and
   structured planning).
-- **Agent patches through the verifier**: in run `run_bb0da2e79534` on Atlas Local, Argon's
-  patches for `customers.py` and `pricing.py` passed verification. The run ended
-  `completed_with_warnings` at 2 of 6 units (see Known gaps).
-- **Tests**: 778 offline backend tests, 25 in real sandbox containers, 56 live Atlas
-  and Gemini tests behind `-m live`, and 16 frontend vitest tests. A plain
+- **A full chess migration**: run `run_70e126c3acf2`, 24 Oct, ended `completed` across
+  all 14 units of the chess fixture against `gemini-4-argon`. Argon's responses are
+  recorded in `demo/replays/run_70e126c3acf2.json` on `demo/argon-replay`, which
+  replays the run without calling Gemini. The recording holds the model's side only,
+  so the gates are re-run for real on every replay.
+- **Agent patches through the verifier**: earlier, in run `run_bb0da2e79534` on Atlas
+  Local, Argon's patches for `customers.py` and `pricing.py` passed verification. That
+  run ended `completed_with_warnings` at 2 of 6 units, and the chess run above
+  supersedes it as the stronger evidence.
+- **Tests**: 827 offline backend tests, 25 in real sandbox containers, 56 live Atlas
+  and Gemini tests behind `-m live`, and 20 frontend vitest tests. A plain
   `uv run pytest` excludes the live ones (`addopts`), because one live run costs about
   48 Gemini embedding calls against a 1000-a-day free tier. CI
   (`.github/workflows/ci.yml`) runs lint, offline tests, the container suite and the
@@ -236,14 +243,15 @@ icons and IBM Plex, following the template in [`design/`](design/).
 
 ## 8. Known gaps
 
-- **No chess run has reached a verdict yet.** Every piece is in place and none of it
-  has been run together on chess ([#4](https://github.com/Prittstick22/axolotl/issues/4),
-  [#7](https://github.com/Prittstick22/axolotl/issues/7)). This is the headline gap.
+- **No cold-start reproduction yet.** A live chess run reached a verdict on 24 Oct —
+  `run_70e126c3acf2`, `completed` across 14 units against `gemini-4-argon`, recorded
+  for replay on `demo/argon-replay` ([#4](https://github.com/Prittstick22/axolotl/issues/4)). What has not happened is someone
+  starting from a fresh clone with only the README and reproducing it ([#7](https://github.com/Prittstick22/axolotl/issues/7)).
 - A cold start needs five Docker images built, which the README now lists. It used to
   say only "Docker running", so anyone following it got no images, a runner chip
   reading `unavailable`, and nothing explaining why ([#7](https://github.com/Prittstick22/axolotl/issues/7)).
-- The Search screen is not built ([#20](https://github.com/Prittstick22/axolotl/issues/20)); its
-  API is live and tested. The Verification/Diff and Report screens landed on 24 Oct.
+- The Verification/Diff, Report and Search screens all landed on 24 Oct; no screen
+  renders a placeholder any more.
 - `calls` edges are not extracted.
 - The Gemini free-tier embedding quota is 1000 requests a day; the replay cache needs
   one run with quota available to populate it.

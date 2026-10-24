@@ -1,5 +1,7 @@
 # Agent Brief — Dev 4: Demo Fixture, Sandbox Runner & Differential Verifier
 
+> **Dev 4 is William (Will) (`WilliamParis1`).** Who is who: [TEAM_SPLIT](TEAM_SPLIT.md).
+
 > **Changed 24 Oct 2026:** the demo is chess (Python 2.7 → 3.14), the only demo, so the chess
 > cases are MVP ([#23](https://github.com/Prittstick22/axolotl/issues/23)). `legacy_orders` below is no longer a demo: it is only the test
 > fixture until chess replaces it ([#54](https://github.com/Prittstick22/axolotl/issues/54)). See [PROJECT_STATUS.md](../PROJECT_STATUS.md).

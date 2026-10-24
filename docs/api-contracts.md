@@ -26,6 +26,7 @@ parses one shape.
 | `DATABASE_UNAVAILABLE` | 503 | Atlas unreachable or `MONGODB_URI` unset. **There is no in-memory fallback** (§9). |
 | `UNSUPPORTED_TARGET` | 422 | Target unknown, or known with `supported=false` (**T-08**). |
 | `REPOSITORY_NOT_EXECUTABLE` | 409 | Plan requested for a ZIP upload; those are static-analysis only. |
+| `SNAPSHOT_UNAVAILABLE` | 409 | This machine has no copy of the repository's code: an upload imported on another laptop. Returned by re-indexing, and by creating a plan or starting a run **before any Argon call** (#84). Built-in fixtures never hit it: their copy is rebuilt from the checkout (#83). |
 | `INTEGRATION_UNAVAILABLE` | 503 | A collaborator's function isn't implemented yet. Names the owner in `details`. |
 | `MODEL_UNAVAILABLE` | 503 | Argon was called and failed: a spent quota, a rate limit that outlasted the wait, a dropped connection. The message says which (#47). |
 | `PLAN_NOT_FOUND` / `RUN_NOT_FOUND` / `ARTEFACT_NOT_FOUND` / `UNIT_NOT_FOUND` | 404 | Unknown id. |
@@ -77,7 +78,7 @@ All ✅ — implemented and exercised against the real cluster.
 
 | Endpoint | Response |
 |---|---|
-| `GET /demo-fixtures` | `[{demo_fixture_id, name, description}]` |
+| `GET /demo-fixtures` | `[{demo_fixture_id, name, description}]`. `chess` first, then the `legacy_orders` test fixture. Importing a fixture again returns the existing repository: one id per fixture content (#82). |
 | `POST /repositories/import` | `RepositoryRecord` — multipart `files` + one `paths` entry each (a folder), multipart `file` (ZIP), **or** `{demo_fixture_id, name?}` |
 | `GET /repositories` | `RepositoryRecord[]` — **newest first** |
 | `GET /repositories/{repo_id}` | `RepositoryRecord` |
@@ -204,6 +205,10 @@ Sets a flag the worker checks between steps. 409 `RUN_ALREADY_FINISHED` on a ter
 
 ### ✅ `GET /runs/{run_id}/artefacts` → `[{artefact_id, kind, sha256, download_url}]`
 ### ✅ `GET /artefacts/{artefact_id}/download` → file stream
+### ✅ `GET /runs/{run_id}/export` → ZIP of the migrated project (#40)
+The final accepted tree with `axolotl/MIGRATION.md`, `report.json` and `migration.patch`.
+Built on request, not listed as an artefact. 404 `REPORT_NOT_READY` before the report,
+404 `ARTEFACT_NOT_FOUND` when no unit was accepted or the tree is gone.
 
 ---
 

@@ -106,7 +106,13 @@ async def test_chess_cases_are_independent_of_execution_order(chess_runner, ches
     reversed_path = tmp_path / "reversed.json"
     reversed_path.write_text(json.dumps(list(reversed(json.loads(path.read_text())))))
     repeated = await chess_runner(IMAGES[1], CHESS, reversed_path)
-    assert baseline == repeated
+    # Repeatability concerns behaviour; optional runtime samples vary per run.
+    assert baseline.keys() == repeated.keys()
+    assert all(
+        comparison.compare(case_id, "visible", baseline[case_id], repeated[case_id]).verdict
+        == "match"
+        for case_id in baseline
+    )
 
 
 async def test_hidden_cases_catch_a_promotion_regression(chess_runner, chess_cases, tmp_path):

@@ -124,7 +124,7 @@ def _resolve(
 def _candidate_names(analysis: ModuleAnalysis, reference: ImportRef) -> list[str]:
     """Dotted names this import could mean, most specific first."""
     if reference.level:
-        base = _relative_base(analysis.dotted, reference.level)
+        base = _relative_base(analysis, reference.level)
         root = f"{base}.{reference.target}" if base and reference.target else (
             base or reference.target
         )
@@ -172,11 +172,17 @@ def _package_of(analysis: ModuleAnalysis) -> str:
     return analysis.dotted.rpartition(".")[0]
 
 
-def _relative_base(dotted: str, level: int) -> str:
-    """`from ..pkg import x` inside a.b.c -> base `a` for level 2."""
-    parts = dotted.split(".")
-    # level 1 is the containing package, so drop the module itself first.
-    trimmed = parts[: max(0, len(parts) - level)]
+def _relative_base(analysis: ModuleAnalysis, level: int) -> str:
+    """`from ..pkg import x` inside a.b.c -> base `a` for level 2.
+
+    Level 1 is the module's own package: the parent for `a/b/c.py`, but the package
+    itself for `a/b/__init__.py`. Counting from the dotted name alone sent
+    `from .game import Game` in `local_chess/__init__.py` one level too high, so it
+    became an external package `ext_game` instead of an edge to `local_chess/game.py`.
+    """
+    package = _package_of(analysis)
+    parts = package.split(".") if package else []
+    trimmed = parts[: max(0, len(parts) - (level - 1))]
     return ".".join(trimmed)
 
 

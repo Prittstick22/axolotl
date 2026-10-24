@@ -51,17 +51,19 @@ function EventLine({ row }: { row: EventRow }) {
   const more = Boolean(row.detail?.length || row.gates?.length);
   const caret = more && !fail;
   const Icon = caret ? CaretRightIcon : ROW_ICON[row.kind];
-  const box = 'flex h-9 items-center gap-2 px-4 text-sm whitespace-nowrap';
+  // A failure with nothing to expand (an error, a blocked unit, a 429) wraps, so its reason reads in full.
+  const wrap = fail && !more;
+  const box = cn('flex gap-2 px-4 text-sm whitespace-nowrap', wrap ? 'min-h-9 items-start py-2' : 'h-9 items-center');
   const line = (
     <>
       <Icon
         size={16}
         aria-hidden
-        className={cn('flex-none', fail ? 'text-failed' : 'text-muted-foreground', caret && 'transition-transform group-open:rotate-90 motion-reduce:transition-none')}
+        className={cn('flex-none', wrap && 'mt-0.5', fail ? 'text-failed' : 'text-muted-foreground', caret && 'transition-transform group-open:rotate-90 motion-reduce:transition-none')}
       />
       <span className="font-mono text-muted-foreground">{time(row.timestamp)}</span>
       <span className={cn('font-mono font-medium', fail && 'text-failed')}>{row.name}</span>
-      <span className="min-w-0 flex-1 truncate text-muted-foreground">{row.text}</span>
+      <span className={cn('min-w-0 flex-1 text-muted-foreground', wrap ? 'break-words whitespace-normal' : 'truncate')}>{row.text}</span>
     </>
   );
   if (!more) {
@@ -292,8 +294,9 @@ export default function RunScreen() {
   const navSlot = useOutletContext<HTMLElement | null>();
   const runId = params.get('run');
   const run = useRun(runId);
-  // A status code means the API answered; only a network failure is a lost connection.
-  const lost = run.error instanceof ApiError && run.error.status === 0;
+  // Spec §9.3: once the run has loaded, any failed poll leaves old data on screen, so the banner says from when.
+  // Before that, only a network failure is a lost connection; an error the API answered shows as it is.
+  const lost = run.error instanceof ApiError && (run.error.status === 0 || Boolean(run.data));
 
   if (!runId) return <Empty repoId={repoId} search={params.size ? `?${params}` : ''} />;
   return (
@@ -316,7 +319,16 @@ export default function RunScreen() {
       {run.data ? (
         <Dashboard repoId={repoId} run={run.data} />
       ) : (
-        !lost && <p className="p-6 text-muted-foreground">{run.isError ? `Couldn’t load this run: ${run.error.message}` : 'Loading the run…'}</p>
+        !lost && (
+          <div className="flex flex-col items-start gap-3 p-6">
+            <p className="text-muted-foreground">{run.isError ? `Couldn’t load this run: ${run.error.message}` : 'Loading the run…'}</p>
+            {run.isError && (
+              <Button variant="outline" onClick={() => void run.refetch()}>
+                Try again
+              </Button>
+            )}
+          </div>
+        )
       )}
     </main>
   );

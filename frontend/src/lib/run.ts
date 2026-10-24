@@ -25,7 +25,11 @@ export function useRun(runId: string | null) {
     queryKey: ['run', runId],
     queryFn: () => getRun(runId!),
     enabled: Boolean(runId),
-    // A run that isn't there (404) won't turn up by asking again.
-    refetchInterval: (q) => (isLive(q.state.data) && !(q.state.error instanceof ApiError && q.state.error.status === 404) ? POLL_MS : false),
+    // A run that isn't there (404) won't turn up by asking again. Before the first load, an answered error (a 503 with
+    // Atlas down) isn't retried either: TanStack clears it on each try, so "Loading" would hide it for Atlas's 5 s timeout.
+    refetchInterval: (q) => {
+      const e = q.state.error instanceof ApiError ? q.state.error : undefined;
+      return isLive(q.state.data) && !(e && (e.status === 404 || (!q.state.data && e.status))) ? POLL_MS : false;
+    },
   });
 }

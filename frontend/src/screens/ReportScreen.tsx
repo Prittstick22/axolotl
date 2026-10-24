@@ -244,9 +244,10 @@ export default function ReportScreen() {
   const run = useRun(runId);
   // The worker writes the report about 20 s after the run ends. Until then the API answers 404.
   // Timed by the fetch, not the render, so the last 404 both stops the polling and says so.
+  // A run with an error (no baseline, a backend restart) went through worker.py's _fail path, which writes no report.
   const ended = run.data && !isLive(run.data) ? Date.parse(run.data.updated_at) : undefined;
   const waiting = (e: Error | null, at: number) =>
-    e instanceof ApiError && e.code === 'REPORT_NOT_READY' && (ended === undefined || at - ended < CLOSING_WAIT_MS);
+    e instanceof ApiError && e.code === 'REPORT_NOT_READY' && !run.data?.error && (ended === undefined || at - ended < CLOSING_WAIT_MS);
   const report = useQuery({
     queryKey: ['report', runId],
     queryFn: () => getReport(runId!),
@@ -296,7 +297,9 @@ export default function ReportScreen() {
           </Empty>
         ) : (
           <Empty icon={ListChecksIcon} title="No report for this run">
-            <p className="max-w-[48ch] text-muted-foreground">The run ended without writing one. Its last events on the Run screen say why.</p>
+            <p className="max-w-[48ch] break-words text-muted-foreground">
+              {run.data?.error ? `The run failed before writing one: ${run.data.error}` : 'The run ended without writing one. Its last events on the Run screen say why.'}
+            </p>
             <Link to={toRun} className={cn(buttonVariants(), 'mt-2')}>
               Go to run
             </Link>

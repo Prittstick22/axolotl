@@ -493,6 +493,24 @@ async def test_no_baseline_means_the_run_fails_rather_than_proceeding(world):
     assert world.migrated_order == []
 
 
+async def test_a_baseline_that_captured_nothing_fails_the_run(world, monkeypatch):
+    """#96: every case failed to capture, so there is no oracle either. The run used
+    to carry on and spend Argon calls on every unit."""
+    capture = world.capture_baseline
+
+    async def capture_nothing(run_id, repo_id, units):
+        summary = await capture(run_id, repo_id, units)
+        return summary.model_copy(update={"cases_captured": 0,
+                                          "cases_failed_to_capture": 26})
+
+    monkeypatch.setattr(ports_module, "capture_baseline", capture_nothing)
+    run = await run_to_completion(world)
+
+    assert run.state == "failed"
+    assert "captured no behaviour cases (26 failed" in (run.error or "")
+    assert world.migrated_order == []
+
+
 async def test_an_unavailable_agent_blocks_its_units_without_crashing_the_run(world):
     world.agent_available = False
     run = await run_to_completion(world)

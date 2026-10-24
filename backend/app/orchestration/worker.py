@@ -284,6 +284,15 @@ async def _execute(run_id: str, plan: MigrationPlan) -> None:
             # No baseline means no oracle, so nothing downstream can be verified.
             await _fail(run, f"cannot capture a baseline: {exc}")
             return
+        if summary.cases_captured == 0:
+            # The same, after the fact (#96): every unit would spend Argon calls on a
+            # patch with nothing to be compared against.
+            await _fail(run, (
+                "the baseline captured no behaviour cases "
+                f"({summary.cases_failed_to_capture} failed to capture), so nothing "
+                "can be verified against it"
+            ))
+            return
 
         # --- per unit, dependency first ------------------------------------
         accepted_revision = await _migrate_units(run, plan, by_id)

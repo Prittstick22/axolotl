@@ -239,6 +239,9 @@ icons and IBM Plex, following the template in [`design/`](design/).
 - **No chess run has reached a verdict yet.** Every piece is in place and none of it
   has been run together on chess ([#4](https://github.com/Prittstick22/axolotl/issues/4),
   [#7](https://github.com/Prittstick22/axolotl/issues/7)). This is the headline gap.
+- A cold start needs five Docker images built, which the README now lists. It used to
+  say only "Docker running", so anyone following it got no images, a runner chip
+  reading `unavailable`, and nothing explaining why ([#7](https://github.com/Prittstick22/axolotl/issues/7)).
 - The Search screen is not built ([#20](https://github.com/Prittstick22/axolotl/issues/20)); its
   API is live and tested. The Verification/Diff and Report screens landed on 24 Oct.
 - `calls` edges are not extracted.

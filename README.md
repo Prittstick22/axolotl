@@ -53,8 +53,31 @@ cd backend && uv sync && uv run uvicorn app.main:app --reload --port 8000
 cd frontend && npm install && npm run dev
 ```
 
+**Build the sandbox images.** Nothing can be verified without them: the runner chip
+reads `unavailable`, and a run gets as far as the baseline and stops. There are five,
+and the same commands CI runs are the ones to run here
+(`.github/workflows/ci.yml`, which is the source of truth if these drift):
+
+```bash
+docker build -t axolotl-runner:latest runner/
+docker build -t axolotl-runner:py2.7  --build-arg PYTHON_VERSION=2.7  --build-arg PYTEST_VERSION=4.6.11 runner/
+docker build -t axolotl-runner:py3.14 --build-arg PYTHON_VERSION=3.14 --build-arg PYTEST_VERSION=8.4.2  runner/
+docker build -f runner/Dockerfile.behaviour --build-arg PYTHON_IMAGE=python:2.7.18-slim -t axolotl-chess-cases:py27  runner/
+docker build -f runner/Dockerfile.behaviour --build-arg PYTHON_IMAGE=python:3.14-slim  -t axolotl-chess-cases:py314 runner/
+```
+
+`axolotl-runner:latest` is the 3.12 image `legacy_orders` runs on; the `py2.7` and
+`py3.14` pair is what a Python 2 migration needs, one for the baseline and one for the
+candidate ([#22](https://github.com/Prittstick22/axolotl/issues/22)).
+
 Open <http://localhost:5173>. The status chips show the **real** state of MongoDB, the
 Atlas search indexes, the sandbox runner and Gemini.
+
+**Then import the demo.** On *New migration*, choose **Upload a folder** and pick
+`demo/chess` from this repository. It is recognised as the trusted chess fixture by an
+exact content match, which is what makes it executable — a modified copy is imported
+for reading only ([#21](https://github.com/Prittstick22/axolotl/issues/21)). Choose
+**Python 2 to Python 3** as the target, the label the Plan screen shows.
 
 **With an empty `.env` every chip reads `unavailable`. That is the honest answer, not a
 failure of the app** — nothing here fakes a working dependency.
@@ -66,7 +89,12 @@ curl -s http://localhost:8000/api/v1/system/status     # same thing from the API
 API docs: <http://localhost:8000/docs> · Tests: `cd backend && uv run pytest`
 
 **Prerequisites:** Python 3.12 (uv installs and pins it), [uv](https://docs.astral.sh/uv/),
-Node 20+, Docker running, and a MongoDB Atlas cluster plus a Gemini API key.
+Node 20+, a running Docker daemon (on Windows, Docker Desktop must be **started** —
+the daemon is not running just because Docker is installed), and a MongoDB Atlas
+cluster plus a Gemini API key.
+
+`MONGODB_URI` and `GEMINI_API_KEY` are the only two values you must fill; everything
+else in `.env.example` has a working default.
 
 ---
 

@@ -126,6 +126,22 @@ safety rules. Change a contract only through SHARED_CONTRACTS §11.
 
 ---
 
+## Team
+
+`Dev N` in the docs, the layout below, ticket titles and the `dev N` labels means:
+
+| Role | Name | GitHub |
+|---|---|---|
+| Dev 1: Argon agent, and project manager | Dev | [`Prittstick22`](https://github.com/Prittstick22) |
+| Dev 2: orchestrator and integration | Mo | [`mh-husssain`](https://github.com/mh-husssain) |
+| Dev 3: graph and Atlas | Caroline | [`Caroline3110`](https://github.com/Caroline3110) |
+| Dev 4: verifier and sandbox | William (Will) | [`WilliamParis1`](https://github.com/WilliamParis1) |
+| Dev 5: frontend | Abhay | [`PanotAbhay`](https://github.com/PanotAbhay) |
+
+The repository is public, by decision (24 Oct). Never commit `.env` or any key.
+
+---
+
 ## Layout
 
 ```text
@@ -336,8 +352,8 @@ Dev 4's fuller treatment is [`docs/safety-and-limitations.md`](docs/safety-and-l
   **Those hashes were taken on a checkout with CRLF line endings**, so 13 of the 16 do
   not match the same source here; the manifest is provenance, not a checksum, and the
   trust gate normalises line endings for exactly that reason.
-  Attribution and permission to publish still to be confirmed with Will before the
-  repository goes public ([#8](https://github.com/Prittstick22/axolotl/issues/8)).
+  The repository is public (24 Oct); attribution and permission to publish are still to
+  be confirmed with Will ([#8](https://github.com/Prittstick22/axolotl/issues/8)).
 - **legacy_orders** — written for this project. A small order service whose pricing
   rule rounds per line before tax, which is the behaviour a naive rewrite breaks:
   77 of 300 single-line inputs diverge, and the fixture's own 12 tests all pass on a

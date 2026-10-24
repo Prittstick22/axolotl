@@ -26,7 +26,8 @@ files were copied byte-for-byte; hashes are in
 [chess-source-manifest.json](chess-source-manifest.json).
 
 The user identifies this as Will's program. No upstream URL or licence was supplied;
-confirm attribution and permission with Will before public submission.
+the repository is public (24 Oct), so confirm attribution and permission with Will
+([#8](https://github.com/Prittstick22/axolotl/issues/8)).
 
 ## Source and target versions
 

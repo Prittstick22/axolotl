@@ -1,5 +1,7 @@
 # Agent Brief — Dev 2: Orchestrator, Scheduler & Integration Lead
 
+> **Dev 2 is Mo (`mh-husssain`).** Who is who: [TEAM_SPLIT](TEAM_SPLIT.md).
+
 You are the implementation agent for **Dev 2** on Axolotl (Encode London 2026). You have three documents:
 1. `Axolotl_Product_Requirements_and_Implementation_Handoff.md` — the Spec
 2. `SHARED_CONTRACTS.md` — names, shapes, ownership (you are its custodian)

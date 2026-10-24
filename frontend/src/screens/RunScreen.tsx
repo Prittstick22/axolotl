@@ -11,7 +11,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { cn } from 'cn';
 import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Link, useLocation, useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useOutletContext, useParams, useSearchParams } from 'react-router-dom';
 
 import { ApiError, cancelRun, getGraph, getPlan, listRunEvents } from '@/api/client';
 import { ConnectionBanner } from '@/components/ConnectionBanner';
@@ -153,9 +153,10 @@ function Dashboard({ repoId, run }: { repoId: string; run: RunSummary }) {
   const current = run.units.find((u) => u.unit_id === run.current_unit);
   // The graph follows the run's current unit until someone picks a module.
   const [picked, setPicked] = useState<string | null>();
+  const selected = picked === undefined ? (current?.module_ids[0] ?? null) : picked;
+  const node = graph.data?.nodes.find((n) => n.id === selected);
   const [confirming, setConfirming] = useState(false);
   const cancelButton = useRef<HTMLButtonElement>(null);
-  const navigate = useNavigate();
   const { search } = useLocation();
   const log = events.data ?? [];
   const last = log.at(-1);
@@ -219,20 +220,29 @@ function Dashboard({ repoId, run }: { repoId: string; run: RunSummary }) {
       )}
 
       <div className="flex min-h-[480px] flex-1">
-        <GraphArea
-          graph={graph}
-          selected={picked === undefined ? (current?.module_ids[0] ?? null) : picked}
-          filter=""
-          onSelect={setPicked}
-          onOpen={(id) => {
-            // A module opens its unit's diff and gates (screen 07); test modules belong to no unit.
-            const unitId = graph.data?.nodes.find((n) => n.id === id)?.unit_id;
-            if (unitId) void navigate({ pathname: `/repos/${encodeURIComponent(repoId)}/run/${encodeURIComponent(unitId)}`, search });
-          }}
-          attempts={attempts}
-        />
+        <GraphArea graph={graph} selected={selected} filter="" onSelect={setPicked} attempts={attempts} />
         <aside aria-label="Run events" className="relative w-[400px] flex-none border-l bg-card xl:w-[440px] min-[1300px]:w-[480px]">
           <div className="absolute inset-0 flex flex-col">
+            {/* Clicking the graph only selects; the selected module's unit (screen 07) opens from here. Test modules belong to no unit. */}
+            <section aria-label="Selected module" className="flex min-h-14 flex-none items-center justify-between gap-3 border-b px-4 py-2">
+              {node ? (
+                <span title={node.path ?? node.label} className="min-w-0 truncate font-mono font-medium">
+                  {node.path ?? node.label}
+                </span>
+              ) : (
+                <span className="text-sm text-muted-foreground">Select a module to open its diff and gates.</span>
+              )}
+              {node?.unit_id ? (
+                <Link
+                  to={{ pathname: `/repos/${encodeURIComponent(repoId)}/run/${encodeURIComponent(node.unit_id)}`, search }}
+                  className={cn(buttonVariants({ variant: 'outline' }), 'flex-none')}
+                >
+                  Open diff and gates
+                </Link>
+              ) : (
+                node && <span className="flex-none text-sm text-muted-foreground">Not migrated, no diff</span>
+              )}
+            </section>
             <section className="flex flex-none flex-col gap-2 border-b px-4 py-3">
               <h2 className="text-sm font-medium text-muted-foreground">{gates ? `Gates, ${gates.title}` : 'Gates'}</h2>
               {gates?.gates.length ? (

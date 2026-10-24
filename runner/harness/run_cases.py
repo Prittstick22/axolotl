@@ -32,6 +32,7 @@ import json
 import os
 import signal
 import sys
+import time
 import traceback
 from decimal import Decimal
 
@@ -244,7 +245,48 @@ def run_one(case, timeout_seconds):
     finally:
         signal.alarm(0)
 
+    # Timing is optional evidence, never a behaviour gate. The first execution
+    # above is the warm-up/oracle. Repeat only successful, reproducible cases;
+    # reset and decode fresh inputs each time, outside the measured interval.
+    if outcome["status"] == "ok":
+        samples = []
+        signal.alarm(timeout_seconds)
+        try:
+            for _ in range(5):
+                reset_state()
+                prepared = [
+                    (resolve(dotted), [decode(a) for a in args],
+                     {k: decode(v) for k, v in kwargs.items()})
+                    for dotted, args, kwargs in calls
+                ]
+                start = cpu_time_ns()
+                for fn, args, kwargs in prepared:
+                    result = fn(*args, **kwargs)
+                elapsed = max(0, cpu_time_ns() - start)
+                if encode(result) != outcome["value"]:
+                    break
+                samples.append(elapsed)
+        except Exception:  # noqa: BLE001 - optional timing cannot change the verdict
+            samples = []
+        finally:
+            signal.alarm(0)
+        if len(samples) == 5:
+            outcome["duration_ns"] = sorted(samples)[2]
+            outcome["duration_samples_ns"] = samples
+
     return outcome
+
+
+def cpu_time_ns():
+    """Process CPU time on the Linux runner, compatible with Python 2.7.
+
+    Python 2's time.clock measures CPU time on Unix. Nanoseconds are the unit,
+    not a claim about the timer's resolution. Container startup, reset, input
+    decoding, imports and output encoding are excluded.
+    """
+    if hasattr(time, "process_time_ns"):
+        return time.process_time_ns()
+    return int(time.clock() * 1000000000)
 
 
 def load_cases(path):

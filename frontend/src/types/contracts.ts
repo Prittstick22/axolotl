@@ -276,6 +276,7 @@ export interface CaseOutcome {
   exception_message: string | null;
   /** median call time inside the harness, warm-up excluded */
   duration_ns: number | null;
+  duration_samples_ns?: number[] | null;
 }
 
 export interface CaseComparison {

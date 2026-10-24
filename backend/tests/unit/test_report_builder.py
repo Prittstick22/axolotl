@@ -72,6 +72,7 @@ def world(monkeypatch, tmp_path):
     monkeypatch.setattr(store_module, "save_artefact", save_artefact)
     monkeypatch.setattr(store_module, "list_artefacts", list_artefacts)
     monkeypatch.setattr(ports_module, "diff", unavailable)
+    monkeypatch.setattr(ports_module, "list_verifications", unavailable)
     monkeypatch.setattr(ports_module, "narrate_report", unavailable)
     monkeypatch.setattr(artefacts_module, "artefact_root", lambda run_id: tmp_path)
     return state
@@ -80,6 +81,38 @@ def world(monkeypatch, tmp_path):
 # --------------------------------------------------------------------------
 # counters must not be inflated
 # --------------------------------------------------------------------------
+
+async def test_report_includes_timings_from_its_final_accepted_verification(world, monkeypatch):
+    from types import SimpleNamespace
+
+    from app.verification.comparison import compare, outcome_from_harness
+
+    world["journal"] = [
+        event(1, "snapshot_accepted", unit_id="unit_pricing", revision="rev_final"),
+        event(2, "verification_passed", scope="final", verification_id="ver_final"),
+    ]
+    outcome = outcome_from_harness({
+        "case_id": "a", "status": "ok", "value": 1, "duration_ns": 2000,
+        "duration_samples_ns": [1000, 2000, 2000, 3000, 4000],
+    }, "a")
+
+    async def verifications(_run):
+        return [SimpleNamespace(
+            run_id="run_report0001", verification_id="ver_final", unit_id=None,
+            workspace_revision="rev_final", runner_mode="trusted_docker",
+            all_required_gates_passed=True,
+            comparisons=[compare("a", "visible", outcome, outcome)],
+        )]
+
+    async def cases(*_args, **_kwargs):
+        return [SimpleNamespace(case_id="a", unit_id="unit_pricing")]
+
+    monkeypatch.setattr(ports_module, "list_verifications", verifications)
+    monkeypatch.setattr(ports_module, "load_cases", cases)
+    report = await build_report(make_run())
+    assert report.performance.units[0].before_median_us == 2
+    assert world["saved"].performance == report.performance
+
 
 async def test_repeat_attempts_do_not_inflate_the_test_counts(world):
     """A unit verified three times has its gates emitted three times.

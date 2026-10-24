@@ -1,0 +1,11 @@
+# Test images for the stdlib-only chess case harness. These do not enable a
+# production migration target or supply the pytest tooling required by issue #22.
+ARG PYTHON_IMAGE=python:3.14-slim
+FROM ${PYTHON_IMAGE}
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONHASHSEED=0 \
+    PYTHONPATH=/code \
+    HOME=/tmp \
+    TMPDIR=/tmp
+WORKDIR /

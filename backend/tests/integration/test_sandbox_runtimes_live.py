@@ -144,7 +144,16 @@ async def test_unchanged_chess_encodes_identically_on_27_and_314(tmp_path):
     assert old_result.exit_code == 0, old_result.stderr
     assert new_result.exit_code == 0, new_result.stderr
     assert [o["case_id"] for o in old] == [c["case_id"] for c in SMOKE_CASES]
-    assert old == new
+    # Timings differ by interpreter/run; canonical behaviour must still agree.
+    for before, after in zip(old, new, strict=True):
+        assert {k: v for k, v in before.items() if not k.startswith("duration_")} == {
+            k: v for k, v in after.items() if not k.startswith("duration_")
+        }
+        for outcome in (before, after):
+            if outcome["status"] == "ok":
+                assert len(outcome["duration_samples_ns"]) == 5
+                assert outcome["duration_ns"] == sorted(outcome["duration_samples_ns"])[2]
+                assert outcome["duration_ns"] >= 0
 
     by_id = {o["case_id"]: o for o in new}
     assert by_id["parse"]["value"] == {"__tuple__": [4, 4]}

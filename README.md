@@ -33,8 +33,8 @@ the newer PyMongo async corrections in place of the supplied Motor instructions.
 > demo. The `legacy_orders` fixture stays in the repo only as the test fixture the backend
 > tests and the sandbox run on, until chess replaces it ([#54](https://github.com/Prittstick22/axolotl/issues/54)). Chess can't be
 > migrated through the enabled UI target yet: the Python 2.7/3.14 sandbox landed in
-> [#22](https://github.com/Prittstick22/axolotl/issues/22), the chess behaviour suite is
-> in [PR #69](https://github.com/Prittstick22/axolotl/pull/69), and `python2_to_3` remains
+> [#22](https://github.com/Prittstick22/axolotl/issues/22), the chess behaviour suite landed in
+> [#23](https://github.com/Prittstick22/axolotl/issues/23), and `python2_to_3` remains
 > disabled pending integration. That work is tracked in [#30](https://github.com/Prittstick22/axolotl/issues/30); the full plan is in
 > [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md). Planning documents describing the
 > orders demo reflect the earlier plan.

@@ -219,16 +219,51 @@ def _withhold_harness_logs(verification: dict[str, Any]) -> dict[str, Any]:
     """Drop the harness logs whole. The comparisons carry the same results, redacted
     case by case; filtering the log line by line would trust a 4 KB truncation not to
     cut a held-out outcome away from its case id.
+
+    Two layers, because the first one is a list of names. `HARNESS_GATES` is exactly
+    right today - only `differential` and `impacted_tests` are built by
+    `_comparison_gate`, the one place harness output becomes a gate log - but a gate
+    added to that builder later would leak until someone remembered this set. The
+    second layer withholds any gate log that mentions a still-sealed case, whatever
+    the gate is called, so the guarantee does not depend on that memory.
+
+    The first layer stays: it withholds a harness log even when no case happens to be
+    sealed, so the response shape does not change depending on the data.
     """
     gates = verification.get("gates")
     if not isinstance(gates, list):
         return verification
+
+    sealed = _sealed_case_ids(verification)
     return {**verification, "gates": [
-        {**g, "log_excerpt": WITHHELD_LOG}
-        if isinstance(g, dict) and g.get("gate") in HARNESS_GATES and g.get("log_excerpt")
-        else g
-        for g in gates
+        _withhold_gate(g, sealed) if isinstance(g, dict) else g for g in gates
     ]}
+
+
+def _sealed_case_ids(verification: dict[str, Any]) -> set[str]:
+    """Case ids this response is already refusing to show values for."""
+    comparisons = verification.get("comparisons")
+    if not isinstance(comparisons, list):
+        return set()
+    return {
+        c["case_id"] for c in comparisons
+        if isinstance(c, dict) and c.get("redacted") and c.get("case_id")
+    }
+
+
+def _withhold_gate(gate: dict[str, Any], sealed: set[str]) -> dict[str, Any]:
+    log = gate.get("log_excerpt")
+    if not log:
+        return gate
+    if gate.get("gate") in HARNESS_GATES:
+        return {**gate, "log_excerpt": WITHHELD_LOG}
+    if any(case_id in log for case_id in sealed):
+        log_name = gate.get("gate")
+        log_message = (
+            f"case outputs withheld: this {log_name} log mentions a held-out case."
+        )
+        return {**gate, "log_excerpt": log_message}
+    return gate
 
 
 @router.get("/runs/{run_id}/diff")

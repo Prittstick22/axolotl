@@ -371,3 +371,109 @@ def test_the_harness_logs_do_not_carry_what_the_comparisons_redact():
     assert gates["differential"]["log_excerpt"] == WITHHELD_LOG
     assert gates["impacted_tests"]["log_excerpt"] == ""        # nothing to withhold
     assert gates["existing_tests"]["log_excerpt"] == "12 passed in 0.14s"
+
+
+# --------------------------------------------------------------------------
+# #45 follow-up: nothing held out reaches the response, whatever carries it
+# --------------------------------------------------------------------------
+
+HELD_OUT_VALUE = "2.65"
+HARNESS_LOG = (
+    '{"case_id": "case_001", "status": "ok", "value": "1.25"}\n'
+    '{"case_id": "hcase_001", "status": "ok", "value": "' + HELD_OUT_VALUE + '"}\n'
+)
+
+
+def a_gate(name: str, log: str = "") -> dict:
+    return {
+        "gate": name, "status": "passed", "required": True,
+        "summary": "2 case(s) agree with the baseline, 0 differ, 0 inconclusive",
+        "passed": 2, "failed": 0, "inconclusive": 0, "log_excerpt": log,
+    }
+
+
+def test_no_held_out_value_survives_anywhere_in_the_unit_response():
+    """My first fix at this (`e4fad35`) redacted the comparisons and left the gate
+    logs alone, so `hcase_001`'s expected value went out in the same response that
+    carefully refused to show it. Dev 5 caught it live on Atlas Local.
+
+    The reason it was invisible: my test fixtures all had `"gates": []`. Asserting on
+    the whole serialised response, rather than on one field at a time, is what makes
+    that class of gap hard to repeat.
+    """
+    from app.api.plans_runs import _redact_comparisons, _withhold_harness_logs
+
+    verification = a_verification([
+        a_comparison("case_001", "visible", "1.25", "1.26"),
+        a_comparison("hcase_001", "held_out", HELD_OUT_VALUE, "2.64"),
+    ])
+    verification["gates"] = [
+        a_gate("compile"),
+        a_gate("existing_tests", "2 passed in 0.4s"),
+        a_gate("differential", HARNESS_LOG),
+        a_gate("impacted_tests", HARNESS_LOG),
+    ]
+
+    body = _withhold_harness_logs(_redact_comparisons(verification, exposed=set()))
+
+    assert HELD_OUT_VALUE not in str(body), "a held-out value reached the response"
+    # The visible case is unaffected: redaction is per case, not wholesale.
+    assert any(c["case_id"] == "case_001" and c["old"]["value"] == "1.25"
+               for c in body["comparisons"])
+    # A log with nothing held out in it is left alone.
+    assert body["gates"][1]["log_excerpt"] == "2 passed in 0.4s"
+
+
+def test_a_gate_nobody_remembered_to_list_is_still_withheld():
+    """`HARNESS_GATES` is a list of names, and only `differential` and
+    `impacted_tests` are built by `_comparison_gate` today. A third one added to that
+    builder later would leak until someone remembered to add it here, so a gate log
+    that mentions a sealed case is withheld whatever the gate is called.
+    """
+    from app.api.plans_runs import _redact_comparisons, _withhold_harness_logs
+
+    verification = a_verification([
+        a_comparison("hcase_001", "held_out", HELD_OUT_VALUE, "2.64"),
+    ])
+    verification["gates"] = [a_gate("final_integration", HARNESS_LOG)]
+
+    body = _withhold_harness_logs(_redact_comparisons(verification, exposed=set()))
+
+    assert HELD_OUT_VALUE not in str(body)
+    assert "mentions a held-out case" in body["gates"][0]["log_excerpt"]
+
+
+def test_an_exposed_case_does_not_trigger_withholding():
+    """Repair already showed this case to the model, so its log may be read too -
+    otherwise the gate log disappears exactly when a reviewer needs it most."""
+    from app.api.plans_runs import _redact_comparisons, _withhold_harness_logs
+
+    verification = a_verification([
+        a_comparison("hcase_001", "held_out", HELD_OUT_VALUE, "2.64"),
+    ])
+    verification["gates"] = [a_gate("final_integration", HARNESS_LOG)]
+
+    body = _withhold_harness_logs(
+        _redact_comparisons(verification, exposed={"hcase_001"})
+    )
+    assert body["gates"][0]["log_excerpt"] == HARNESS_LOG
+
+
+def test_harness_gates_are_withheld_even_with_nothing_sealed():
+    """So the response shape does not change depending on the data."""
+    from app.api.plans_runs import WITHHELD_LOG, _redact_comparisons, _withhold_harness_logs
+
+    verification = a_verification([a_comparison("case_001", "visible", "1.25", "1.26")])
+    verification["gates"] = [a_gate("differential", HARNESS_LOG)]
+
+    body = _withhold_harness_logs(_redact_comparisons(verification, exposed=set()))
+    assert body["gates"][0]["log_excerpt"] == WITHHELD_LOG
+
+
+def test_a_verification_with_no_gates_is_passed_through():
+    from app.api.plans_runs import _withhold_harness_logs
+
+    verification = a_verification([])
+    assert _withhold_harness_logs(verification) == verification
+    del verification["gates"]
+    assert _withhold_harness_logs(verification) == verification

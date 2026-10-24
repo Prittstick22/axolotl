@@ -171,18 +171,53 @@ async def test_nothing_reaches_the_model_when_everything_is_recorded(model):
 # If any of these broke, the live test would silently bypass the replay and spend
 # quota again. Each patches the exact attribute test_search_live.py patches.
 
-async def test_chunk_embeddings_go_through_embeddings_embed_one(monkeypatch):
+async def test_chunk_embeddings_go_through_embeddings_embed_many(monkeypatch):
     from app.search import embeddings
 
     seen = []
 
-    async def fake(text, *, task_type="RETRIEVAL_QUERY"):
-        seen.append(task_type)
-        return [0.0]
+    async def fake(texts, *, task_type="RETRIEVAL_DOCUMENT"):
+        seen.append((list(texts), task_type))
+        return [[0.0] for _ in texts]
 
-    monkeypatch.setattr(embeddings, "embed_one", fake)
+    monkeypatch.setattr(embeddings, "embed_many", fake)
     assert await embeddings.embed_documents(["a", "b"]) == [[0.0], [0.0]]
-    assert seen == [embeddings.DOCUMENT_TASK] * 2
+    assert seen == [(["a", "b"], embeddings.DOCUMENT_TASK)], "one batched request"
+
+
+async def test_batched_embeddings_replay_and_only_ask_for_what_is_missing():
+    from tests.integration.model_replay import replaying_embed_many
+
+    asked: list[list[str]] = []
+
+    async def real(texts, *, task_type="RETRIEVAL_DOCUMENT"):
+        asked.append(list(texts))
+        return [[float(len(t))] for t in texts]
+
+    store, stats = MemoryStore(), new_stats()
+    embed_many = replaying_embed_many(real, store, stats)
+
+    assert await embed_many(["a", "bb"]) == [[1.0], [2.0]]
+    assert await embed_many(["bb", "ccc", "a"]) == [[2.0], [3.0], [1.0]]
+    assert asked == [["a", "bb"], ["ccc"]]
+    assert stats["embeddings_called"] == 3 and stats["embeddings_replayed"] == 2
+
+
+async def test_a_text_recorded_one_by_one_replays_in_a_batch():
+    """The fallback path and the batched path share keys."""
+    from tests.integration.model_replay import replaying_embed_many
+
+    async def one(text, *, task_type="RETRIEVAL_QUERY"):
+        return [7.0]
+
+    async def many(texts, *, task_type="RETRIEVAL_DOCUMENT"):
+        raise AssertionError("should have replayed")
+
+    store = MemoryStore()
+    from app.search.embeddings import DOCUMENT_TASK
+
+    await replaying_embed_one(one, store, new_stats())("a", task_type=DOCUMENT_TASK)
+    assert await replaying_embed_many(many, store, new_stats())(["a"]) == [[7.0]]
 
 
 async def test_query_embeddings_go_through_search_embed_one(monkeypatch):

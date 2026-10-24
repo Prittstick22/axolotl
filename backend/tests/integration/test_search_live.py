@@ -49,6 +49,7 @@ from tests.integration.model_replay import (
     MemoryStore,
     new_stats,
     replaying_describe_chunks,
+    replaying_embed_many,
     replaying_embed_one,
 )
 
@@ -95,7 +96,9 @@ def replay_gemini(request):
     embed_one = replaying_embed_one(embeddings.embed_one, store, stats)
 
     mp = pytest.MonkeyPatch()
-    mp.setattr(embeddings, "embed_one", embed_one)   # chunk embeddings
+    mp.setattr(embeddings, "embed_one", embed_one)   # chunks one by one (fallback)
+    mp.setattr(embeddings, "embed_many",              # chunks, batched
+               replaying_embed_many(embeddings.embed_many, store, stats))
     mp.setattr(search, "embed_one", embed_one)       # query embeddings
     mp.setattr(descriptions, "describe_chunks",
                replaying_describe_chunks(descriptions.describe_chunks, store, stats))

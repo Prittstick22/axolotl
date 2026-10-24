@@ -6,6 +6,8 @@ the places a request used to be spent for nothing:
   - a spent *daily* quota was retried four times per chunk, as if it were a momentary
     rate limit;
   - chunk embeddings carried on failing one by one after the quota was gone;
+  - each chunk embedding was its own request (122 for chess) where one request
+    carries up to 100;
   - every search re-embedded its query, so rehearsing one demo query cost a call each
     time.
 
@@ -67,10 +69,16 @@ def client(monkeypatch) -> dict[str, Any]:
             state["calls"].append(contents)
             if state["fail_with"]:
                 raise RuntimeError(state["fail_with"])
-            return SimpleNamespace(embeddings=[SimpleNamespace(values=[0.5] * 8)])
+            texts = contents if isinstance(contents, list) else [contents]
+            return SimpleNamespace(
+                embeddings=[SimpleNamespace(values=[0.5] * 8) for _ in texts])
 
     settings = get_settings()
     monkeypatch.setattr(settings, "embedding_dimensions", 8)
+    # Retries back off for real; no test here should wait for them.
+    from app.search import retry
+
+    monkeypatch.setattr(retry, "BASE_DELAY_SECONDS", 0.0)
     monkeypatch.setattr(embeddings, "_client", lambda: (
         SimpleNamespace(aio=SimpleNamespace(models=Models())), settings))
     monkeypatch.setattr(embeddings, "_query_vectors", type(embeddings._query_vectors)())
@@ -123,29 +131,81 @@ async def test_chunk_embedding_stops_at_a_spent_daily_quota(client):
                                                failures=failures)
 
     assert vectors == [None] * 40
-    # The stub fails at once, so the first failure is seen before any other call
-    # starts; against the real API, up to MAX_CONCURRENCY may already be in flight.
     assert len(client["calls"]) == 1, "one request, not one per chunk times retries"
+    assert len(client["calls"][0]) == 40, "the whole batch in that one request"
     assert "RESOURCE_EXHAUSTED" in failures[0]
 
 
-async def test_chunk_embedding_carries_on_past_a_one_off_failure(client, monkeypatch):
-    """Only a spent quota stops the batch; one bad chunk does not cost the rest."""
-    failed = {"chunk 0"}
+def rejecting(client, monkeypatch, bad: str, error: str = "400 INVALID_ARGUMENT"):
+    """A client that refuses any request containing `bad`, as Gemini refuses a whole
+    batch when it will not take one of its texts."""
 
     class Models:
         async def embed_content(self, model, contents, config=None):
             client["calls"].append(contents)
-            if contents in failed:
-                raise RuntimeError("400 INVALID_ARGUMENT")
-            return SimpleNamespace(embeddings=[SimpleNamespace(values=[0.5] * 8)])
+            texts = contents if isinstance(contents, list) else [contents]
+            if bad in texts:
+                raise RuntimeError(error)
+            return SimpleNamespace(
+                embeddings=[SimpleNamespace(values=[0.5] * 8) for _ in texts])
 
     settings = get_settings()
     monkeypatch.setattr(embeddings, "_client", lambda: (
         SimpleNamespace(aio=SimpleNamespace(models=Models())), settings))
 
+
+async def test_chunk_embedding_carries_on_past_a_one_off_failure(client, monkeypatch):
+    """A rejected batch is retried text by text, so one bad chunk costs only itself."""
+    rejecting(client, monkeypatch, "chunk 0")
+
     vectors = await embeddings.embed_documents(["chunk 0", "chunk 1", "chunk 2"])
     assert vectors[0] is None and vectors[1] and vectors[2]
+    assert client["calls"][0] == ["chunk 0", "chunk 1", "chunk 2"], "batch first"
+
+
+async def test_a_busy_model_is_not_retried_text_by_text(client, monkeypatch):
+    """After its retries, a 503 batch would fail the same way for every single text."""
+    rejecting(client, monkeypatch, "chunk 0", "503 UNAVAILABLE. high demand")
+
+    vectors = await embeddings.embed_documents(["chunk 0", "chunk 1", "chunk 2"])
+    assert vectors == [None, None, None]
+    assert all(len(c) == 3 for c in client["calls"]), "only the batch, retried"
+
+
+# --------------------------------------------------------------------------
+# batching
+# --------------------------------------------------------------------------
+
+async def test_chess_sized_batches_are_one_request_each(client):
+    vectors = await embeddings.embed_documents([f"chunk {i}" for i in range(20)])
+    assert len(client["calls"]) == 1
+    assert vectors == [[0.5] * 8] * 20
+
+
+async def test_more_than_the_api_cap_is_split(client):
+    await embeddings.embed_documents([f"chunk {i}" for i in range(250)])
+    assert [len(c) for c in client["calls"]] == [100, 100, 50]
+
+
+async def test_a_short_answer_is_never_zipped_onto_the_wrong_chunks(client, monkeypatch):
+    """Two vectors for three texts would shift every vector onto the wrong chunk."""
+
+    class Models:
+        async def embed_content(self, model, contents, config=None):
+            client["calls"].append(contents)
+            texts = contents if isinstance(contents, list) else [contents]
+            count = len(texts) - 1 if len(texts) > 1 else 1
+            return SimpleNamespace(
+                embeddings=[SimpleNamespace(values=[0.5] * 8) for _ in range(count)])
+
+    settings = get_settings()
+    monkeypatch.setattr(embeddings, "_client", lambda: (
+        SimpleNamespace(aio=SimpleNamespace(models=Models())), settings))
+
+    with pytest.raises(embeddings.EmbeddingUnavailable, match="got 2"):
+        await embeddings.embed_many(["a", "b", "c"])
+    # embed_documents treats it as a rejected batch and goes text by text.
+    assert await embeddings.embed_documents(["a", "b", "c"]) == [[0.5] * 8] * 3
 
 
 # --------------------------------------------------------------------------

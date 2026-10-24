@@ -21,7 +21,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
 from app.config import get_settings
-from app.search.embeddings import QUERY_TASK
+from app.search.embeddings import DOCUMENT_TASK, QUERY_TASK
 
 PREFIX = "axolotl/gemini"
 
@@ -75,6 +75,42 @@ def replaying_embed_one(
         return vector
 
     return embed_one
+
+
+def replaying_embed_many(
+    real: Callable[..., Awaitable[list[list[float]]]], store: Store,
+    stats: dict[str, int],
+) -> Callable[..., Awaitable[list[list[float]]]]:
+    """Wraps `app.search.embeddings.embed_many`, the batched chunk path.
+
+    Same keys as `replaying_embed_one`, so a text recorded either way replays either
+    way. Only the texts with nothing recorded go to the real function, as one batch.
+    """
+
+    def key_for(text: str, task_type: str) -> str:
+        settings = get_settings()
+        return cache_key("embedding", settings.gemini_embedding_model,
+                         settings.embedding_dimensions, task_type, text)
+
+    async def embed_many(texts: list[str], *, task_type: str = DOCUMENT_TASK
+                         ) -> list[list[float]]:
+        vectors: list[list[float] | None] = []
+        for text in texts:
+            recorded = store.get(key_for(text, task_type), None)
+            vectors.append(list(recorded) if recorded is not None else None)
+        stats["embeddings_replayed"] += sum(v is not None for v in vectors)
+
+        missing = [i for i, v in enumerate(vectors) if v is None]
+        if missing:
+            fresh = await real([texts[i] for i in missing], task_type=task_type)
+            for i, vector in zip(missing, fresh, strict=True):
+                store.set(key_for(texts[i], task_type), list(vector))
+                vectors[i] = vector
+            stats["embeddings_called"] += len(missing)
+            stats["embedding_requests"] = stats.get("embedding_requests", 0) + 1
+        return vectors  # type: ignore[return-value]
+
+    return embed_many
 
 
 def replaying_describe_chunks(

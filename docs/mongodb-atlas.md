@@ -445,25 +445,40 @@ curl -s localhost:8000/api/v1/repositories           # 503 DATABASE_UNAVAILABLE
 ## Quota budget for demo day
 
 The free tier allows **1000 `embed_content` requests a day** per model. It ran out on
-23 Oct after about a dozen imports; the 429 said *"retry in 12h14m51s"*, so it resets
-roughly a day after it is spent, not at midnight. Descriptions use `generate_content`
-on `GEMINI_MODEL`, **the same model as Dev 1's agent**, so every description also
-competes with the migration run.
+23 Oct after about a dozen imports. Descriptions use `generate_content` on
+`GEMINI_MODEL`, **the same model as Dev 1's agent**, so every description also competes
+with the migration run.
+
+Two facts from Google's [rate-limits page](https://ai.google.dev/gemini-api/docs/rate-limits)
+that change the plan:
+
+- **Quota is per Google Cloud project, not per API key.** A second key only works as a
+  backup if it belongs to a *different* project.
+- **Daily limits reset at midnight Pacific time:** 08:00 in the UK until the clocks go
+  back on 25 Oct, then 07:00. The 23 Oct 429 (*"retry in 12h14m51s"* at about 18:50)
+  pointed at roughly 07:05, so check the AI Studio usage page rather than trusting
+  either.
+
+**Chunk embeddings are batched:** up to 100 texts go in one `batchEmbedContents`
+request, and the background indexer sends 20 at a time. Google's docs don't say
+whether the daily limit counts a batch as one request or one per text, so the table
+shows both. The priming run below settles it: it prints how many requests and texts
+it sent, so compare that with the AI Studio usage page.
 
 ### What each action costs
 
-| Action | `embed_content` | `generate_content` |
+| Action | Embedding requests (texts) | `generate_content` |
 |---|---|---|
-| Import `legacy_orders`, first time | 40 | 40 |
-| Import chess, first time | 122 | 122 |
+| Import `legacy_orders`, first time | 2 (40) | 40 |
+| Import chess, first time | 7 (122) | 122 |
 | Import identical code again, same database and models | **0** | **0** |
-| `POST /repositories/{id}/index` | 1 per chunk | 1 per chunk |
+| `POST /repositories/{id}/index` | 1 per 100 chunks | 1 per chunk |
 | Keyword search | 0 | 0 |
-| Vector or hybrid search, new query text | 1 | 0 |
+| Vector or hybrid search, new query text | 1 (1) | 0 |
 | The same query again, same server process | 0 | 0 |
 | Restarting the backend | 0 | 0 |
 | `uv run pytest -m "not live"` | 0 | 0 |
-| `uv run pytest -m live tests/integration/test_search_live.py`, cache empty | 44 | 40 |
+| `uv run pytest -m live tests/integration/test_search_live.py`, cache empty | 6 (44) | 40 |
 | The same, cache primed | 0 | 0 |
 
 How the zeros are kept (#11):
@@ -476,6 +491,9 @@ How the zeros are kept (#11):
   after it pays once.
 - **A repeated query reuses its vector.** Vectors are kept in memory per server process,
   up to 256 queries. A restart clears them.
+- **Chunks are embedded in batches.** See above. A batch the API rejects outright is
+  retried one text at a time, so one bad text does not lose the other 19. A busy model
+  is not retried that way, because each text would fail the same way.
 - **A spent daily quota stops the work.** It is not retried (it used to be retried 4
   times, so 160 failing requests for a 40-chunk import), and the batch stops at the
   first refusal. A per-minute limit is still retried.
@@ -490,7 +508,7 @@ How the zeros are kept (#11):
    including real Gemini calls in Dev 1's and Dev 2's. Use `uv run pytest -m "not live"`.
 2. **Don't import into a new database, or change `GEMINI_MODEL`,
    `GEMINI_EMBEDDING_MODEL` or `EMBEDDING_DIMENSIONS`.** Reuse matches on both, so either
-   makes the next chess import pay 244 calls again.
+   makes the next chess import pay 122 descriptions and 122 embedded texts again.
 3. **Don't press re-index** on chess or `legacy_orders` unless indexing failed.
 4. **Don't run `--cache-clear` or delete `backend/.pytest_cache`.** That throws away the
    recorded answers.
@@ -500,7 +518,8 @@ How the zeros are kept (#11):
    /repositories/{id}/index` says `ready`, and don't make the first import of the day
    the one just before recording.
 
-Open, for the team: is a paid key or a second key available as a backup? Not decided.
+Open, for the team: is a paid key, or a key from a **second project**, available as a
+backup? Not decided.
 
 ### Prime the replay cache: one run, on the machine that runs the tests
 
@@ -519,10 +538,12 @@ checkout's `backend/.pytest_cache`, so prime it on the machine that will run the
    uv run pytest -m live tests/integration/test_search_live.py -v -s
    ```
 
-   **Cost: 84 requests.** That is 44 `embed_content` (40 chunks + 4 distinct query
-   texts; the 6 searches repeat two of them, and repeats replay) and 40
-   `generate_content` (one description per chunk). The last line
-   prints `Gemini calls this run: {...}`.
+   **Cost:** 40 `generate_content` (one description per chunk) and 6 embedding
+   requests carrying 44 texts: 2 batches of 20 chunks, plus 4 distinct query texts.
+   The 6 searches repeat two of the queries, and repeats replay. The last line prints
+   `Gemini calls this run: {...}`, where `embeddings_called` is texts and
+   `embedding_requests` is batched chunk requests. Compare it with the AI Studio usage
+   page to learn how Google counts a batch.
 4. Run the same command again. It should print `embeddings_called: 0` and
    `descriptions_called: 0`, and the six embedding-dependent tests should pass rather
    than skip.

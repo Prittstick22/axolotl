@@ -210,6 +210,8 @@ export interface MigrationTarget {
   supported: boolean;
   description: string;
   unsupported_reason: string | null;
+  /** additive (§11, #21): the Python version the target produces, such as "3.14" */
+  target_python?: string | null;
 }
 
 export interface MigrationUnit {

@@ -4,10 +4,11 @@ import { cn } from 'cn';
 import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
-import { approvePlan, createPlan, getPlan, listTargets, startRun } from '@/api/client';
+import { approvePlan, createPlan, getPlan, getRuntime, listTargets, startRun } from '@/api/client';
 import { Choice } from '@/components/Choice';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { TONE_TEXT, TONE_TINT, type Tone } from '@/lib/status';
+import { matchingTarget } from '@/lib/targets';
 import type { MigrationPlan, PlanStatus } from '@/types/contracts';
 
 const PLAN_STATUS: Record<PlanStatus, [Icon, string, Tone]> = {
@@ -145,8 +146,12 @@ export default function PlanScreen() {
   const planId = params.get('plan');
   const targets = useQuery({ queryKey: ['targets'], queryFn: listTargets });
   const plan = useQuery({ queryKey: ['plan', planId], queryFn: () => getPlan(planId!), enabled: Boolean(planId) });
+  const runtime = useQuery({ queryKey: ['runtime', repoId], queryFn: () => getRuntime(repoId) });
   const [picked, setPicked] = useState<string>();
-  const target = picked ?? plan.data?.target_id ?? targets.data?.find((t) => t.supported)?.target_id;
+  const declared = runtime.data?.declared_python ?? null;
+  // Nothing is pre-selected until the declared Python is known, so chess never starts on Modern Python 3.
+  const target = picked ?? plan.data?.target_id ?? (runtime.data && targets.data ? matchingTarget(targets.data, declared) : undefined);
+  const targetPython = targets.data?.find((t) => t.target_id === target)?.target_python;
 
   const create = useMutation({
     mutationFn: () => createPlan(repoId, target!),
@@ -177,6 +182,12 @@ export default function PlanScreen() {
             {create.isPending ? 'Creating plan…' : plan.data ? 'Create a new plan' : 'Create plan'}
           </Button>
         </div>
+        {runtime.data && (
+          <p className="text-sm">
+            {declared ? `Python ${declared} (declared)` : 'No Python version declared'}
+            {targetPython && ` → Python ${targetPython} (target)`}
+          </p>
+        )}
         {targets.isError && <p className="text-sm text-muted-foreground">Couldn’t load the targets: {targets.error.message}</p>}
         <fieldset className="flex flex-col gap-2" disabled={create.isPending}>
           <legend className="sr-only">Migration target</legend>

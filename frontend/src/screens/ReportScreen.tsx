@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useOutletContext, useParams, useSearchParams } from 'react-router-dom';
 
-import { API_BASE, ApiError, getPlan, getReport, listArtefacts } from '@/api/client';
+import { API_BASE, ApiError, exportUrl, getPlan, getReport, listArtefacts } from '@/api/client';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { narrativeBlocks } from '@/lib/narrative';
@@ -84,11 +84,24 @@ function Narrative({ text }: { text: string | null }) {
   );
 }
 
-function Downloads({ query }: { query: UseQueryResult<Artefact[]> }) {
+function Downloads({ query, report }: { query: UseQueryResult<Artefact[]>; report: RunReport }) {
   const artefacts = query.data;
   const missing = (Object.keys(KIND) as Artefact['kind'][]).filter((k) => !artefacts?.some((a) => a.kind === k));
   return (
     <Panel title="Downloads">
+      {/* With nothing accepted the project is still the legacy code, and the API answers 404. */}
+      {report.units.some((u) => u.accepted_revision) && (
+        <>
+          <a href={exportUrl(report.run_id)} className={cn(buttonVariants(), 'self-start')}>
+            <DownloadSimpleIcon aria-hidden />
+            Export migrated project
+          </a>
+          <p className="text-sm text-muted-foreground">
+            A ZIP of the project at the final revision. Its <code className="font-mono">axolotl/MIGRATION.md</code> says which files were migrated and which are
+            still legacy.
+          </p>
+        </>
+      )}
       {query.isError ? (
         <p className="text-sm text-muted-foreground">Couldn’t load the file list: {query.error.message}</p>
       ) : !artefacts ? (
@@ -227,7 +240,7 @@ function Report({ report, plan, artefacts, run }: { report: RunReport; plan?: Mi
             </ul>
           </Panel>
         )}
-        <Downloads query={artefacts} />
+        <Downloads query={artefacts} report={report} />
         <Narrative text={report.narrative} />
       </div>
     </div>

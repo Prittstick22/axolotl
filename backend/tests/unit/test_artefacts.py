@@ -219,3 +219,74 @@ async def test_the_check_is_skipped_not_passed_when_diff_is_unavailable(
 
     assert verdict["checked"] is False
     assert verdict.get("matches") is None
+
+
+# --------------------------------------------------------------------------
+# project export (#40)
+# --------------------------------------------------------------------------
+
+def make_export_inputs():
+    from app.models.contracts import MigrationPlan, MigrationUnit, RunReport
+
+    now = store_module.utcnow()
+    units = [
+        UnitRunState(unit_id="unit_pricing", module_ids=["module_pricing"], status="passed",
+                     accepted_revision=REVISION),
+        UnitRunState(unit_id="unit_refunds", module_ids=["module_refunds"], status="blocked"),
+    ]
+    plan = MigrationPlan(
+        plan_id="plan_000000000001", repository_id="repo_000000000001", snapshot_hash="h",
+        target_id="python-3.12-decimal-money",
+        units=[MigrationUnit(unit_id=u.unit_id, module_ids=u.module_ids,
+                             file_paths=[u.unit_id.removeprefix("unit_") + ".py"],
+                             depends_on_unit_ids=[], dependant_unit_ids=[]) for u in units],
+        order=["unit_pricing", "unit_refunds"], rationale="", risks=[], coverage_gaps=[],
+        model="gemini-4-argon", created_at=now,
+    )
+    report = RunReport(
+        run_id="run_000000000001", verdict="completed_with_warnings", units=units,
+        final_verification_id=None, changed_files=["pricing.py"], tests_passed=10,
+        tests_failed=0, tests_inconclusive=0, counterexamples_found=0,
+        counterexamples_resolved=0, baseline_snapshot_hash="h", final_artefact_hash=None,
+        coverage_caveats=["Agreement shown only for 10 tested case(s)."], limitations=[],
+        narrative=None, artefact_ids=[], generated_at=now,
+    )
+    return report, plan
+
+
+async def test_the_export_holds_the_project_and_the_run_files_only(
+    artefact_dir, recorded, tmp_path
+):
+    import zipfile
+
+    tree = tmp_path / "accepted"
+    (tree / "tests").mkdir(parents=True)
+    (tree / "pricing.py").write_text("x = 1\n", encoding="utf-8")
+    (tree / "tests" / "cases.json").write_text("[]", encoding="utf-8")
+    (tree / ".env").write_text("SECRET=1\n", encoding="utf-8")
+    (tree / ".pytest_cache").mkdir()
+    (tree / ".pytest_cache" / "v").write_text("x", encoding="utf-8")
+    (tree / "__pycache__").mkdir()
+    (tree / "__pycache__" / "pricing.cpython-312.pyc").write_bytes(b"\x00")
+    patch = artefact_dir / "migration.patch"
+    patch.write_text("--- a/pricing.py\n", encoding="utf-8")
+    recorded.append({"run_id": "run_000000000001", "kind": "patch", "path": str(patch)})
+
+    report, plan = make_export_inputs()
+    path = await artefacts.write_export(report, plan, REVISION, tree)
+
+    with zipfile.ZipFile(path) as archive:
+        assert sorted(archive.namelist()) == [
+            "axolotl/MIGRATION.md", "axolotl/migration.patch", "axolotl/report.json",
+            "pricing.py", "tests/cases.json",
+        ]
+
+
+def test_a_partial_run_says_which_files_are_still_legacy():
+    report, plan = make_export_inputs()
+    notes = artefacts.migration_notes(report, plan, REVISION)
+
+    migrated, legacy = notes.split("## Still legacy")
+    assert "- pricing.py" in migrated
+    assert "- refunds.py (blocked)" in legacy.split("##")[0]
+    assert "Agreement shown only for 10 tested case(s)." in notes

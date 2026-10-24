@@ -195,6 +195,10 @@ Sets a flag the worker checks between steps. 409 `RUN_ALREADY_FINISHED` on a ter
 
 ### ✅ `GET /runs/{run_id}/artefacts` → `[{artefact_id, kind, sha256, download_url}]`
 ### ✅ `GET /artefacts/{artefact_id}/download` → file stream
+### ✅ `GET /runs/{run_id}/export` → ZIP of the migrated project (#40)
+The final accepted tree with `axolotl/MIGRATION.md`, `report.json` and `migration.patch`.
+Built on request, not listed as an artefact. 404 `REPORT_NOT_READY` before the report,
+404 `ARTEFACT_NOT_FOUND` when no unit was accepted or the tree is gone.
 
 ---
 

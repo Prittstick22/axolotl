@@ -199,6 +199,9 @@ export function listArtefacts(runId: string): Promise<Artefact[]> {
   return apiFetch<Artefact[]>(`${run(runId)}/artefacts`);
 }
 
+/** GET /api/v1/runs/{run_id}/export - the migrated project as a ZIP (#40). A link, not a fetch. */
+export const exportUrl = (runId: string) => `${API_BASE}${run(runId)}/export`;
+
 /** GET /api/v1/runs/{run_id}/units/{unit_id} - sealed held-out cases come back redacted. */
 export function getRunUnit(runId: string, unitId: string): Promise<UnitDetail> {
   return apiFetch<UnitDetail>(`${run(runId)}/units/${encodeURIComponent(unitId)}`);

@@ -1794,3 +1794,17 @@ which also needs the target (#21) and chess cases (#23).
 
 714 offline backend tests (15 new), 22 container tests (13 new), ruff clean. No frontend
 changes.
+
+## 24 Oct 2026 — Dev 4: measured sandbox runtime reports (#46)
+
+Added five CPU-time samples after one warm-up for successful, reproducible cases
+inside the Linux sandbox, including Python 2.7/3.14. Fresh inputs and fixture resets
+sit outside the measured interval. Benchmark failures discard timings without
+changing the original functional outcome. Samples persist alongside the median.
+
+Reports aggregate matching paired cases from the successful final verification
+of the final accepted revision. The frontend shows a runtime panel only when
+measurements exist, explicitly limited to tested cases. Missing/old data remains
+null. Spread is a descriptive heuristic, not proof of a speed improvement.
+See `docs/runtime-timings.md` for method, costs and limits. Added 22 offline tests
+and extended the existing real-container cross-interpreter check.

@@ -195,8 +195,31 @@ function Report({ report, plan, artefacts, run }: { report: RunReport; plan?: Mi
         </section>
       </div>
 
-      {/* No Runtime panel: report.performance is null until the runner times cases (#46). */}
       <div className="flex w-[360px] flex-none flex-col gap-4 min-[1300px]:w-[400px]">
+        {report.performance && report.performance.units.length > 0 && (
+          <Panel title="Sandbox runtime" note={report.performance.method}>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm [&_td]:py-2 [&_th]:py-2 [&_th]:pr-3">
+                <caption className="sr-only">Before and after CPU time on tested cases only, in microseconds</caption>
+                <thead><tr><th>Unit / cases</th><th>Before (µs)</th><th>After (µs)</th></tr></thead>
+                <tbody>
+                  {report.performance.units.map((u) => (
+                    <tr key={u.unit_id}>
+                      <td className="pr-3 break-all">
+                        <span className="font-mono">{paths.get(u.unit_id) ?? u.unit_id}</span>
+                        <p className="text-muted-foreground">{u.cases_timed} timed cases</p>
+                        {u.within_noise && <p className="text-muted-foreground">Difference within measured spread</p>}
+                      </td>
+                      <td>{u.before_median_us.toFixed(2)}</td>
+                      <td>{u.after_median_us.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-sm text-muted-foreground">Untimed cases and units are omitted. These results do not establish production speed or a statistically significant change.</p>
+          </Panel>
+        )}
         {report.limitations.length > 0 && (
           <Panel title="Limitations" note="What this kind of check can’t tell you, for every run.">
             <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">

@@ -36,12 +36,21 @@ def outcome_from_harness(payload: dict[str, Any], fallback_case_id: str) -> Case
     status = payload.get("status", "harness_error")
     if status not in {"ok", "raised", "timeout", "harness_error"}:
         status = "harness_error"
+    samples = payload.get("duration_samples_ns")
+    valid_timing = (
+        status == "ok" and isinstance(samples, list) and len(samples) == 5
+        and all(type(n) is int and n >= 0 for n in samples)
+        and type(payload.get("duration_ns")) is int
+        and payload["duration_ns"] == sorted(samples)[2]
+    )
     return CaseOutcome(
         case_id=payload.get("case_id") or fallback_case_id,
         status=status,
         value=payload.get("value"),
         exception_type=payload.get("exception_type"),
         exception_message=payload.get("exception_message"),
+        duration_ns=payload["duration_ns"] if valid_timing else None,
+        duration_samples_ns=samples if valid_timing else None,
     )
 
 

@@ -285,6 +285,7 @@ class CaseOutcome(BaseModel):
     exception_type: str | None = None
     exception_message: str | None = None
     duration_ns: int | None = None   # median call time inside the harness, warm-up excluded
+    duration_samples_ns: list[int] | None = None  # additive #46: five sandbox CPU samples
 
 class CaseComparison(BaseModel):
     case_id: str
@@ -409,7 +410,7 @@ class UnitTiming(BaseModel):
     cases_timed: int
     before_median_us: float          # median over cases, old code
     after_median_us: float           # same cases, accepted revision
-    within_noise: bool               # |after - before| <= the larger IQR of the two
+    within_noise: bool              # delta <= larger median per-case sample IQR; heuristic
 
 class PerformanceSummary(BaseModel):
     method: str                      # e.g. "median of 5 runs per case after 1 warm-up"

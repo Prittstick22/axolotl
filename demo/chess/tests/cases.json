@@ -1,0 +1,181 @@
+[
+  {
+    "case_id": "chess_visible_render",
+    "unit_id": "unit_local_chess__cli",
+    "function": "chess_cases.play_session",
+    "args": [
+      [
+        "help",
+        "moves",
+        "quit"
+      ]
+    ],
+    "kwargs": {},
+    "description": "Initial board, help, sorted legal moves and prompt."
+  },
+  {
+    "case_id": "chess_visible_invalid",
+    "unit_id": "unit_local_chess__cli",
+    "function": "chess_cases.play_session",
+    "args": [
+      [
+        "z9e4",
+        "e2e5",
+        "e7e5",
+        "quit"
+      ]
+    ],
+    "kwargs": {},
+    "description": "Malformed, illegal and wrong-turn moves leave the board unchanged."
+  },
+  {
+    "case_id": "chess_visible_turns",
+    "unit_id": "unit_local_chess__cli",
+    "function": "chess_cases.play_session",
+    "args": [
+      [
+        "e2e4",
+        "e7e5",
+        "g1f3",
+        "quit"
+      ]
+    ],
+    "kwargs": {},
+    "description": "Alternate turns and update move counters."
+  },
+  {
+    "case_id": "chess_visible_undo",
+    "unit_id": "unit_local_chess__cli",
+    "function": "chess_cases.play_session",
+    "args": [
+      [
+        "e2e4",
+        "e7e5",
+        "undo",
+        "undo",
+        "undo",
+        "quit"
+      ]
+    ],
+    "kwargs": {},
+    "description": "Undo both moves and reject undo on the initial state."
+  },
+  {
+    "case_id": "chess_visible_mate",
+    "unit_id": "unit_local_chess__cli",
+    "function": "chess_cases.play_session",
+    "args": [
+      [
+        "f2f3",
+        "e7e5",
+        "g2g4",
+        "d8h4"
+      ]
+    ],
+    "kwargs": {},
+    "description": "Fool's Mate ends the session and names the winner."
+  },
+  {
+    "case_id": "chess_visible_castle",
+    "unit_id": "unit_local_chess__cli",
+    "function": "chess_cases.play_session",
+    "args": [
+      [
+        "O-O",
+        "quit"
+      ]
+    ],
+    "kwargs": {
+      "fen": "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1"
+    },
+    "description": "White kingside castling moves both king and rook."
+  },
+  {
+    "case_id": "chess_visible_en_passant",
+    "unit_id": "unit_local_chess__cli",
+    "function": "chess_cases.play_session",
+    "args": [
+      [
+        "e5d6",
+        "quit"
+      ]
+    ],
+    "kwargs": {
+      "fen": "r3k2r/8/8/3pP3/8/8/8/R3K2R w KQkq d6 0 1"
+    },
+    "description": "En passant removes the captured pawn."
+  },
+  {
+    "case_id": "chess_visible_promotion",
+    "unit_id": "unit_local_chess__cli",
+    "function": "chess_cases.play_session",
+    "args": [
+      [
+        "a7a8",
+        "quit"
+      ]
+    ],
+    "kwargs": {
+      "fen": "8/P6k/8/8/8/8/8/K7 w - - 0 1"
+    },
+    "description": "Promotion without a suffix selects a queen."
+  },
+  {
+    "case_id": "chess_visible_stalemate",
+    "unit_id": "unit_local_chess__cli",
+    "function": "chess_cases.play_session",
+    "args": [
+      []
+    ],
+    "kwargs": {
+      "fen": "7k/5Q2/6K1/8/8/8/8/8 b - - 0 1"
+    },
+    "description": "Stalemate ends without requesting another move."
+  },
+  {
+    "case_id": "chess_visible_material",
+    "unit_id": "unit_local_chess__cli",
+    "function": "chess_cases.play_session",
+    "args": [
+      []
+    ],
+    "kwargs": {
+      "fen": "8/8/4k3/8/8/3K4/3B4/8 w - - 0 1"
+    },
+    "description": "King and bishop against king is insufficient material."
+  },
+  {
+    "case_id": "chess_visible_repetition",
+    "unit_id": "unit_local_chess__cli",
+    "function": "chess_cases.play_session",
+    "args": [
+      [
+        "g1f3",
+        "g8f6",
+        "f3g1",
+        "f6g8",
+        "g1f3",
+        "g8f6",
+        "f3g1",
+        "f6g8",
+        "claim"
+      ]
+    ],
+    "kwargs": {},
+    "description": "A third repeated position permits a draw claim."
+  },
+  {
+    "case_id": "chess_visible_fifty_moves",
+    "unit_id": "unit_local_chess__cli",
+    "function": "chess_cases.play_session",
+    "args": [
+      [
+        "claim"
+      ]
+    ],
+    "kwargs": {
+      "fen": "7k/8/8/8/8/8/8/KR6 w - - 100 51"
+    },
+    "description": "The 50-move threshold permits a draw claim."
+  }
+]

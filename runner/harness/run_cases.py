@@ -1,4 +1,5 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 """Axolotl sandbox harness - owner: Dev 4.
 
 Runs behaviour cases against a candidate code tree inside the sandbox container
@@ -15,11 +16,15 @@ where status is one of "ok" | "raised" | "timeout" | "harness_error", and
 
 This file MUST NOT import anything from the backend. It runs as uid 65534 in a
 container with no network, a read-only filesystem and a 16 MB tmpfs at /tmp.
-Standard library only.
+Standard library only. Chess inputs/outputs also run on Python 2.7; runtime
+selection for production migrations is separate from this harness.
 """
+
+from __future__ import print_function
 
 import argparse
 import datetime
+import io
 import json
 import os
 import signal
@@ -28,6 +33,13 @@ import traceback
 from decimal import Decimal
 
 DEFAULT_CASE_TIMEOUT_SECONDS = 5
+
+try:
+    STRING_TYPES = (basestring,)
+    INTEGER_TYPES = (int, long)
+except NameError:
+    STRING_TYPES = (str,)
+    INTEGER_TYPES = (int,)
 
 # Diagnostics go to stderr so stdout stays one-JSON-line-per-case.
 def _warn(message):
@@ -78,7 +90,7 @@ def encode(value):
     must be deterministic: dict keys sorted, sets sorted, Decimals kept as their
     exact string form.
     """
-    if value is None or isinstance(value, (bool, int, str)):
+    if value is None or isinstance(value, (bool,) + INTEGER_TYPES + STRING_TYPES):
         return value
 
     if isinstance(value, Decimal):
@@ -104,7 +116,7 @@ def encode(value):
         return [encode(v) for v in value]
 
     if isinstance(value, dict):
-        if all(isinstance(k, str) for k in value):
+        if all(isinstance(k, STRING_TYPES) for k in value):
             return {k: encode(value[k]) for k in sorted(value)}
         items = [[encode(k), encode(v)] for k, v in value.items()]
         return {"__dict_items__": sorted(items, key=_sort_key)}
@@ -192,7 +204,7 @@ def run_one(case, timeout_seconds):
 
 
 def load_cases(path):
-    with open(path, encoding="utf-8") as handle:
+    with io.open(path, encoding="utf-8") as handle:
         data = json.load(handle)
     if isinstance(data, dict) and "cases" in data:
         return data["cases"]

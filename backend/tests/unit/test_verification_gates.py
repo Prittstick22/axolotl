@@ -59,13 +59,17 @@ def world(monkeypatch):
     async def repo(_run_id):
         return "repo_1"
 
+    async def fixture(_repo_id):
+        return "legacy_orders"
+
     monkeypatch.setattr(verification.runner, "runner_status", status)
     monkeypatch.setattr(verification.runner, "run_compileall", clean)
     monkeypatch.setattr(verification.runner, "run_pytest", clean)
     monkeypatch.setattr(verification.runner, "run_behaviour_cases", behaviour)
     monkeypatch.setattr(verification, "load_cases", cases)
     monkeypatch.setattr(verification, "repository_for_run", repo)
-    monkeypatch.setattr(verification, "write_cases_file", lambda *_a: Path("cases.json"))
+    monkeypatch.setattr(verification, "fixture_for_repository", fixture)
+    monkeypatch.setattr(verification, "write_cases_file", lambda *_a, **_kw: Path("cases.json"))
     monkeypatch.setattr(verification.store, "get_baseline_outcomes", baseline)
     monkeypatch.setattr(verification.store, "save_verification", nothing)
     monkeypatch.setattr(verification.store, "save_counterexamples", nothing)

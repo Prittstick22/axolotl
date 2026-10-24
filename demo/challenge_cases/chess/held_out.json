@@ -1,0 +1,197 @@
+[
+  {
+    "case_id": "chess_hidden_aliases",
+    "unit_id": "unit_local_chess__cli",
+    "function": "chess_cases.play_session",
+    "args": [
+      [
+        " aide ",
+        "e2e4",
+        "coups",
+        "annuler",
+        "nul",
+        "quitter"
+      ]
+    ],
+    "kwargs": {},
+    "description": "Aliases, whitespace, undo and an unsuccessful draw claim."
+  },
+  {
+    "case_id": "chess_hidden_castle_check",
+    "unit_id": "unit_local_chess__cli",
+    "function": "chess_cases.play_session",
+    "args": [
+      [
+        "O-O",
+        "quit"
+      ]
+    ],
+    "kwargs": {
+      "fen": "4k3/8/8/8/8/5r2/8/4K2R w K - 0 1"
+    },
+    "description": "Reject castling through an attacked square."
+  },
+  {
+    "case_id": "chess_hidden_black_castle",
+    "unit_id": "unit_local_chess__cli",
+    "function": "chess_cases.play_session",
+    "args": [
+      [
+        "O-O-O",
+        "quit"
+      ]
+    ],
+    "kwargs": {
+      "fen": "r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1"
+    },
+    "description": "Black queenside castling updates both pieces and rights."
+  },
+  {
+    "case_id": "chess_hidden_black_en_passant",
+    "unit_id": "unit_local_chess__cli",
+    "function": "chess_cases.play_session",
+    "args": [
+      [
+        "e4d3",
+        "quit"
+      ]
+    ],
+    "kwargs": {
+      "fen": "4k3/8/8/8/3Pp3/8/8/4K3 b - d3 0 1"
+    },
+    "description": "Black en passant captures in the opposite direction."
+  },
+  {
+    "case_id": "chess_hidden_underpromotion",
+    "unit_id": "unit_local_chess__cli",
+    "function": "chess_cases.play_session",
+    "args": [
+      [
+        "a7a8n"
+      ]
+    ],
+    "kwargs": {
+      "fen": "8/P6k/8/8/8/8/8/K7 w - - 0 1"
+    },
+    "description": "Explicit knight promotion must not become a queen."
+  },
+  {
+    "case_id": "chess_hidden_black_promotion",
+    "unit_id": "unit_local_chess__cli",
+    "function": "chess_cases.play_session",
+    "args": [
+      [
+        "a2a1r",
+        "quit"
+      ]
+    ],
+    "kwargs": {
+      "fen": "7k/8/8/8/8/8/p7/7K b - - 0 1"
+    },
+    "description": "Black may promote to a rook."
+  },
+  {
+    "case_id": "chess_hidden_fivefold",
+    "unit_id": "unit_local_chess__cli",
+    "function": "chess_cases.play_session",
+    "args": [
+      [
+        "g1f3",
+        "g8f6",
+        "f3g1",
+        "f6g8",
+        "g1f3",
+        "g8f6",
+        "f3g1",
+        "f6g8",
+        "g1f3",
+        "g8f6",
+        "f3g1",
+        "f6g8",
+        "g1f3",
+        "g8f6",
+        "f3g1",
+        "f6g8"
+      ]
+    ],
+    "kwargs": {},
+    "description": "Fivefold repetition ends automatically without a claim."
+  },
+  {
+    "case_id": "chess_hidden_seventy_five_moves",
+    "unit_id": "unit_local_chess__cli",
+    "function": "chess_cases.play_session",
+    "args": [
+      [
+        "b1b2"
+      ]
+    ],
+    "kwargs": {
+      "fen": "7k/8/8/8/8/8/8/KR6 w - - 149 75"
+    },
+    "description": "A quiet move at 149 halfmoves triggers the automatic 75-move draw."
+  },
+  {
+    "case_id": "chess_hidden_white_mate",
+    "unit_id": "unit_local_chess__cli",
+    "function": "chess_cases.play_session",
+    "args": [
+      [
+        "e2e4",
+        "e7e5",
+        "f1c4",
+        "b8c6",
+        "d1h5",
+        "g8f6",
+        "h5f7"
+      ]
+    ],
+    "kwargs": {},
+    "description": "Scholar's Mate ends with White as winner."
+  },
+  {
+    "case_id": "chess_hidden_white_stalemate",
+    "unit_id": "unit_local_chess__cli",
+    "function": "chess_cases.play_session",
+    "args": [
+      []
+    ],
+    "kwargs": {
+      "fen": "8/8/8/8/8/6k1/5q2/7K w - - 0 1"
+    },
+    "description": "White stalemate is distinguished from checkmate."
+  },
+  {
+    "case_id": "chess_hidden_undo_capture",
+    "unit_id": "unit_local_chess__cli",
+    "function": "chess_cases.play_session",
+    "args": [
+      [
+        "e2e4",
+        "d7d5",
+        "e4d5",
+        "undo",
+        "quit"
+      ]
+    ],
+    "kwargs": {},
+    "description": "Undo restores a captured pawn and the active player."
+  },
+  {
+    "case_id": "chess_hidden_expired_en_passant",
+    "unit_id": "unit_local_chess__cli",
+    "function": "chess_cases.play_session",
+    "args": [
+      [
+        "a1b1",
+        "e8f8",
+        "e5d6",
+        "quit"
+      ]
+    ],
+    "kwargs": {
+      "fen": "4k3/8/8/3pP3/8/8/8/R3K3 w - d6 0 1"
+    },
+    "description": "An en passant opportunity expires after a quiet move."
+  }
+]

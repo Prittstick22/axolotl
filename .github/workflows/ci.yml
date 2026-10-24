@@ -69,6 +69,11 @@ jobs:
       - name: Build the runner image
         run: docker build -t axolotl-runner:latest runner/
 
+      - name: Build chess behaviour test images
+        run: |
+          docker build -f runner/Dockerfile.behaviour --build-arg PYTHON_IMAGE=python:2.7.18-slim -t axolotl-chess-cases:py27 runner/
+          docker build -f runner/Dockerfile.behaviour --build-arg PYTHON_IMAGE=python:3.14-slim -t axolotl-chess-cases:py314 runner/
+
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
@@ -80,6 +85,8 @@ jobs:
 
       - name: Sandbox tests
         working-directory: backend
+        env:
+          AXOLOTL_REQUIRE_CHESS_IMAGES: "1"
         run: uv run pytest -q -m docker
 
   frontend:

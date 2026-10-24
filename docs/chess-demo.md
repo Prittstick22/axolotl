@@ -15,6 +15,7 @@ demo/chess/
   setup.py                   Python 2.7 package metadata
   local_chess/               thirteen original Python package modules
   tests/test_chess.py         original rules and terminal-session tests
+  tests/cases.json            added visible behaviour inputs (#23)
 ```
 
 It was copied from the local `Documents/williams chess python proj/local-chess`
@@ -84,13 +85,11 @@ own reproducible interpreters.
    This dual-compatible fixture parses, but Python 2-only syntax in other inputs
    would produce partial analysis. General Python 2 support needs a compatible
    parser or an explicitly documented alternative without rewriting the baseline.
-4. **Cases and oracle routing (Dev 4):** supply repeatable move sequences and stable
-   JSON-friendly outputs. Cover rendering/prompts, invalid moves, turns, undo,
-   checkmate, castling, en passant, promotion and draws. The existing injectable
-   `ConsoleUI` and `scripted_ui` test are useful references. Keep independent hidden
-   cases outside the source tree. Existing case collection points at the orders
-   held-out file globally; make it fixture-specific before importing chess, otherwise
-   orders cases could be attached to the wrong repository.
+4. **Cases and oracle routing (Dev 4, #23):** implemented; see the case suite below.
+   Ingestion selects hidden cases using the trusted fixture identity. Both baseline
+   and candidate execution use that persisted identity, so migrating a candidate
+   does not accidentally switch or drop its hidden suite. Unrecognised imports get
+   no built-in hidden cases (#29).
 5. **Fixture/target registration (Dev 2/3/4):** add chess to the trusted fixture
    allowlist only with the correct cases and runtime support. The existing
    `python2_to_3` target is explicitly unsupported; keep it that way until both
@@ -113,17 +112,78 @@ presented as an executable Python 2 migration.
 
 Build a fresh ZIP with `python demo/package_chess.py` from the repo root. Upload
 `demo/chess-input.zip` in the UI; do not use the stale ZIP from the source folder.
-The generated archive is ignored by Git and contains source, setup.py, README and tests,
-with no caches or runtime binaries.
+The generated archive is ignored by Git and contains source, setup.py, README, tests
+and visible `tests/cases.json`, with no hidden cases, caches or runtime binaries.
+Rebuild old archives and re-import the fixture to register the new cases. The
+existing exact-content trust check includes this visible JSON file.
 
 The UI reads declared Python requirements from `GET /repositories/{id}/runtime`,
 then displays **Python 2.7 (declared) -> Python 3.14 (desired)**, the real module
 and dependency graph, selectable module paths and source inspection. Metadata is
 parsed statically and never executed; it is not proof of interpreter compatibility.
 
-The upgrade plan action remains disabled for uploaded ZIPs and unsupported targets.
-The existing policy makes ZIP uploads static-only, so executable UI uploads require
-an agreed trusted-fixture identification flow (for example exact source-hash matching)
-and fixture-specific cases. Do not globally enable arbitrary upload execution to
-make the button active. Dual-runtime verification must land before enabling the
-Python 2 migration target. Successful source inspection is not a completed upgrade.
+Exact copies of the trusted chess tree can now earn execution eligibility through
+the content-matching flow from #21; modified or unrelated uploads stay static-only.
+The Python 2 migration target still requires #22's production dual-runtime runner
+and gate support. Successful source inspection is not a completed upgrade.
+
+## Behaviour suite (#23)
+
+The original 16 source files remain unchanged. Twelve visible inputs are in
+`demo/chess/tests/cases.json`; twelve independent hidden inputs are in
+`demo/challenge_cases/chess/held_out.json`, outside the imported tree. None contains
+expected outputs. Outcomes are recorded from the baseline, then compared with the
+same inputs on the candidate.
+
+`runner/harness/chess_cases.py` is the protected adapter mounted at `/harness`.
+Each case starts a fresh `Game` and drives the real `ConsoleUI` with commands and
+an optional FEN starting position. It returns ordered output/prompt events plus
+board rows, active player, castling/en-passant state, move counters, status, winner,
+repetition/draw eligibility and sorted legal moves. No object addresses or host
+timestamps are recorded. The adapter contains no hidden inputs and cannot be
+edited as part of a candidate patch.
+
+Coverage includes rendering/help/prompts, malformed and illegal moves, turns,
+undo (including capture restoration), both winners, both castling sides and
+castling through check, both directions of en passant and expiry, default and
+explicit promotions, stalemate, insufficient material, claimed repetition/50-move
+draws and automatic fivefold/75-move draws.
+
+Cases belong to `unit_local_chess__cli`, the end-to-end session unit. The import
+test verifies that changes to game, rules, game state, renderer and pieces reach
+these cases through the scheduler's impacted-unit graph. Units without direct
+cases use the #2 policy: compilation, existing tests, sandbox policy and available
+impacted cases still apply; an empty comparison alone is skipped.
+
+Case routing is explicit and shared by collection and case-file generation:
+
+| Trusted fixture | Hidden input file |
+|---|---|
+| `chess` | `demo/challenge_cases/chess/held_out.json` |
+| `legacy_orders` | `demo/challenge_cases/held_out.json` |
+| Unknown/untrusted upload | None |
+
+Missing requested IDs and collisions between visible/hidden IDs are errors, so
+wrongly routed cases cannot silently disappear. The original model-facing
+visibility filtering and held-out redaction remain in effect.
+
+## Container checks for the behaviour suite
+
+From the repository root, build the two stdlib-only **test** images:
+
+```powershell
+docker build -f runner/Dockerfile.behaviour --build-arg PYTHON_IMAGE=python:2.7.18-slim -t axolotl-chess-cases:py27 runner/
+docker build -f runner/Dockerfile.behaviour --build-arg PYTHON_IMAGE=python:3.14-slim -t axolotl-chess-cases:py314 runner/
+cd backend
+uv run pytest tests/integration/test_chess_cases_docker.py -v -rs
+```
+
+The tests execute all 24 cases on Python 2.7 and 3.14 under the production sandbox
+security profile, compare their outputs, check meaningful chess outcomes, and
+repeat in reverse order to detect state leakage. A deliberately broken promotion
+rule must keep visible cases passing while hidden cases catch the regression.
+CI builds both images and fails if they are unavailable instead of accepting a skip.
+
+These images test the cases/harness only. They do not contain pytest and do not
+implement production runtime selection, baseline metadata or the remaining #22
+gates. They must not be used to claim a completed Axolotl migration.

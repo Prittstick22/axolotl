@@ -219,7 +219,9 @@ async def _import_into(
     try:
         from app.verification.cases import collect_cases, persist_cases
 
-        cases = collect_cases(repository_id, destination, repo_root())
+        cases = collect_cases(
+            repository_id, destination, repo_root(), fixture_id=demo_fixture_id,
+        )
         if cases:
             await persist_cases(cases)
             log.info("persisted %d behaviour case(s) for %s", len(cases), repository_id)

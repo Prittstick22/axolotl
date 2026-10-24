@@ -1743,3 +1743,18 @@ was performed. The prior live evidence remains `run_e5380c4d180c`, recorded abov
 issue author's [review request](https://github.com/Prittstick22/axolotl/issues/2#issuecomment-6383693535)
 also confirms the fix was checked on live runs. The PR's sandbox CI job builds the
 runner and exercises the real container, including the wrong-rounding regression.
+
+## Dev 4 review: issue #44 baseline diff and reports (24 Oct 2026)
+
+Reviewed the snapshot-based baseline fix from `45fe5a5`. Added two report integration
+scenarios using real workspace creation, patch application, acceptance, diffing and
+artefact generation. Only persistence and the optional model narrative are faked.
+An unchanged accepted tree produces an empty diff and patch. Two successive accepted
+changes produce a cumulative patch against the original snapshot, with the correct
+old content and only the two changed files in both report and patch metadata.
+Unchanged README/test files are excluded, the baseline remains intact, and the
+downloaded patch passes the existing revision/hash check.
+
+Validation: all 57 workspace, report and artefact tests passed; changed-file ruff
+and `git diff --check` passed. No Docker or external service is needed for these
+filesystem/report checks. The existing production fix required no further change.

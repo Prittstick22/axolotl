@@ -11,6 +11,7 @@ import type {
   Artefact,
   DemoFixture,
   GraphPayload,
+  IndexStatus,
   MigrationPlan,
   MigrationTarget,
   ModuleDetail,
@@ -132,6 +133,11 @@ export function getModule(repoId: string, moduleId: string): Promise<ModuleDetai
 /** GET /api/v1/repositories/{repo_id}/runtime - declared Python version (§11 addition). */
 export function getRuntime(repoId: string): Promise<RuntimeInfo> {
   return apiFetch<RuntimeInfo>(`${repo(repoId)}/runtime`);
+}
+
+/** GET /api/v1/repositories/{repo_id}/index - search indexing progress after an import (#28). */
+export function getIndexStatus(repoId: string): Promise<IndexStatus> {
+  return apiFetch<IndexStatus>(`${repo(repoId)}/index`);
 }
 
 const post = <T>(path: string, body?: unknown) =>

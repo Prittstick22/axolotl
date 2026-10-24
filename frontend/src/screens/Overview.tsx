@@ -1,10 +1,10 @@
-import { CheckCircleIcon, WarningIcon, XCircleIcon } from '@phosphor-icons/react';
+import { CheckCircleIcon, HourglassIcon, WarningIcon, XCircleIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { cn } from 'cn';
 import type { ReactNode } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 
-import { getGraph, getRepository, getRuntime } from '@/api/client';
+import { getGraph, getIndexStatus, getRepository, getRuntime } from '@/api/client';
 import { buttonVariants } from '@/components/ui/button';
 import { moduleRows } from '@/lib/graph';
 import type { RepositoryRecord } from '@/types/contracts';
@@ -14,6 +14,7 @@ const ANALYSIS: Record<RepositoryRecord['analysis_status'], [typeof CheckCircleI
   partial: [WarningIcon, 'Partial', 'text-warning'],
   failed: [XCircleIcon, 'Failed', 'text-failed'],
 };
+const INDEX_POLL_MS = 2000;
 
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -41,6 +42,12 @@ export default function Overview() {
   const repo = useQuery({ queryKey: ['repository', repoId], queryFn: () => getRepository(repoId) });
   const graph = useQuery({ queryKey: ['graph', repoId, null], queryFn: () => getGraph(repoId) });
   const runtime = useQuery({ queryKey: ['runtime', repoId], queryFn: () => getRuntime(repoId) });
+  // Descriptions and embeddings finish in the background after the import responds (#28).
+  const index = useQuery({
+    queryKey: ['index', repoId],
+    queryFn: () => getIndexStatus(repoId),
+    refetchInterval: (q) => (q.state.data?.state === 'indexing' ? INDEX_POLL_MS : false),
+  });
 
   if (repo.isError) {
     return (
@@ -183,6 +190,28 @@ export default function Overview() {
               <span className="text-sm text-muted-foreground">None</span>
             )}
           </Panel>
+
+          {/* Ready, never indexed, or no answer: nothing to say. Template: kit.js s02 notice. */}
+          {(index.data?.state === 'indexing' || index.data?.state === 'failed') && (
+            <div className="flex items-start gap-2 rounded-md border bg-card px-4 py-3">
+              {index.data.state === 'indexing' ? (
+                <HourglassIcon size={20} aria-hidden className="flex-none" />
+              ) : (
+                <XCircleIcon size={20} aria-hidden className="flex-none text-failed" />
+              )}
+              {index.data.state === 'indexing' ? (
+                <span className="text-sm">
+                  Indexing for search{index.data.total ? `: ${index.data.embedded ?? 0} of ${index.data.total} chunks embedded` : ''}.
+                  Keyword search works now; vector search is available when it finishes.
+                </span>
+              ) : (
+                <span className="flex flex-col text-sm">
+                  Search indexing stopped. Keyword search still works.
+                  {index.data.reason && <span className="break-words text-muted-foreground">{index.data.reason}</span>}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </main>

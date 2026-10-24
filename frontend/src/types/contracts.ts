@@ -98,6 +98,16 @@ export interface RuntimeInfo {
   note: string;
 }
 
+/** GET /repositories/{id}/index - additive (#28, Dev 3). Background descriptions and embeddings; state null if none was recorded. */
+export interface IndexStatus {
+  repository_id: string;
+  state: 'indexing' | 'ready' | 'failed' | null;
+  embedded?: number;
+  /** null while a manual re-index is still counting its chunks */
+  total?: number | null;
+  reason?: string | null;
+}
+
 export interface GraphNode {
   id: string;
   label: string;

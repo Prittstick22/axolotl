@@ -120,7 +120,7 @@ export default function NewMigration() {
           </Button>
           {run.isPending && (
             <span role="status" className="text-sm text-muted-foreground">
-              Mapping modules and imports, then indexing them for search. A larger project can take a few minutes.
+              Mapping modules and imports.
             </span>
           )}
         </div>

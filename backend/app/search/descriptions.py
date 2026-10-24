@@ -22,6 +22,8 @@ import logging
 import time
 from typing import Any
 
+import httpx
+
 from app.config import get_settings
 from app.search.retry import describe, with_retries
 from app.search.settings import description_model, search_settings
@@ -44,6 +46,17 @@ SYSTEM_RULES = (
     "Say what it does and why it matters to a caller. Prefer the vocabulary a "
     "non-author would search for over the identifiers already in the code."
 )
+
+
+# A call that hangs holds one of MAX_CONCURRENCY slots for as long as it hangs: on
+# 24 Oct stalled connections slowed 40 descriptions from ~8 minutes to ~15. A timeout
+# is a TimeoutError, which `with_retries` already treats as transient.
+DESCRIPTION_TIMEOUT_SECONDS = 60.0
+
+# A connection dropped mid-request (24 Oct: `ReadError` cost two descriptions). The
+# request itself was fine, so it is retried once; `with_retries` does not retry these,
+# because a broken network fails every retry the same way.
+DROPPED_CONNECTION = (httpx.ReadError, httpx.WriteError, httpx.RemoteProtocolError)
 
 
 class _Pacer:
@@ -114,11 +127,24 @@ async def describe_chunks(chunks: list[dict[str, Any]]) -> list[str]:
             name = chunk.get("qualified_name")
 
             async def call() -> str:
-                await _pacer.wait(search_settings().gemini_descriptions_per_minute)
-                response = await client.aio.models.generate_content(
-                    model=model, contents=_prompt(chunk)
-                )
-                return (getattr(response, "text", "") or "").strip()
+                for attempt in (1, 2):
+                    # Every attempt is a request, so every attempt takes a slot.
+                    await _pacer.wait(search_settings().gemini_descriptions_per_minute)
+                    try:
+                        response = await asyncio.wait_for(
+                            client.aio.models.generate_content(
+                                model=model, contents=_prompt(chunk)
+                            ),
+                            DESCRIPTION_TIMEOUT_SECONDS,
+                        )
+                    except DROPPED_CONNECTION as exc:
+                        if attempt == 2:
+                            raise
+                        log.info("description for %s: connection dropped (%s); "
+                                 "retrying once", name, type(exc).__name__)
+                        continue
+                    return (getattr(response, "text", "") or "").strip()
+                raise AssertionError("unreachable")
 
             try:
                 text = await with_retries(call, what=f"description for {name}")

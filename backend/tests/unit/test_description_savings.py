@@ -361,3 +361,91 @@ async def test_every_description_request_takes_a_slot(monkeypatch):
 def test_the_rate_is_read_from_the_environment(monkeypatch):
     monkeypatch.setenv("GEMINI_DESCRIPTIONS_PER_MINUTE", "5")
     assert SearchSettings(_env_file=None).gemini_descriptions_per_minute == 5
+
+
+# --------------------------------------------------------------------------
+# hangs and dropped connections
+# --------------------------------------------------------------------------
+
+def flaky_flash(monkeypatch, behaviours: list[str]):
+    """A stand-in client whose successive calls 'hang', 'drop' or answer 'ok'."""
+    import asyncio
+
+    import google.genai
+    import httpx
+
+    from app.search import descriptions, retry
+
+    calls: list[str] = []
+
+    class Models:
+        async def generate_content(self, model, contents, **_):
+            behaviour = behaviours[min(len(calls), len(behaviours) - 1)]
+            calls.append(behaviour)
+            if behaviour == "hang":
+                await asyncio.sleep(3600)
+            if behaviour == "drop":
+                raise httpx.ReadError("connection dropped")
+            return SimpleNamespace(text="Rounds the final bill.")
+
+    class Client:
+        def __init__(self, *_, **__):
+            self.aio = SimpleNamespace(models=Models())
+
+    monkeypatch.setattr(google.genai, "Client", Client)
+    monkeypatch.setattr(get_settings(), "gemini_api_key", "placeholder-not-a-key")
+    monkeypatch.setattr(search_settings(), "gemini_descriptions_per_minute", 0)
+    monkeypatch.setattr(descriptions, "DESCRIPTION_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(retry, "BASE_DELAY_SECONDS", 0.0)
+    return calls
+
+
+def a_chunk():
+    return [{"qualified_name": "pricing.finalise_amount", "path": "pricing.py",
+             "source": "def finalise_amount(x): return round(x, 2)"}]
+
+
+async def test_a_dropped_connection_is_retried_once(monkeypatch):
+    from app.search.descriptions import describe_chunks
+
+    calls = flaky_flash(monkeypatch, ["drop", "ok"])
+    chunks = a_chunk()
+    assert await describe_chunks(chunks) == []
+    assert calls == ["drop", "ok"]
+    assert chunks[0]["description"] == "Rounds the final bill."
+
+
+async def test_a_connection_that_keeps_dropping_is_given_up_after_one_retry(monkeypatch):
+    from app.search.descriptions import describe_chunks
+
+    calls = flaky_flash(monkeypatch, ["drop"])
+    chunks = a_chunk()
+    warnings = await describe_chunks(chunks)
+    assert calls == ["drop", "drop"], "exactly one retry, two requests"
+    assert "description" not in chunks[0]
+    assert any("ReadError" in w for w in warnings)
+
+
+async def test_a_hanging_call_times_out_instead_of_holding_a_slot(monkeypatch):
+    from app.search.descriptions import describe_chunks
+
+    calls = flaky_flash(monkeypatch, ["hang", "ok"])
+    chunks = a_chunk()
+    assert await describe_chunks(chunks) == []
+    assert calls == ["hang", "ok"], "timed out, then retried as transient"
+    assert chunks[0]["description"] == "Rounds the final bill."
+
+
+async def test_each_attempt_takes_its_own_paced_slot(monkeypatch):
+    from app.search import descriptions
+
+    calls = flaky_flash(monkeypatch, ["drop", "ok"])
+    waits: list[int] = []
+
+    async def wait(self, per_minute):
+        waits.append(per_minute)
+
+    monkeypatch.setattr(descriptions._Pacer, "wait", wait)
+    monkeypatch.setattr(search_settings(), "gemini_descriptions_per_minute", 5)
+    await descriptions.describe_chunks(a_chunk())
+    assert len(calls) == 2 and waits == [5, 5]

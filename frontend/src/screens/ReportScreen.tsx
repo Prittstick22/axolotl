@@ -20,8 +20,8 @@ import type { MigrationPlan, RunEvent, RunReport, RunSummary, RunSecurity, Secur
 const VERDICT_TEXT: Record<RunReport['verdict'], string> = {
   completed:
     'Every unit and the final check agree with the original code on the tested cases. That is agreement on those cases, not proof the code behaves the same everywhere.',
-  completed_with_warnings: 'Not everything could be verified. Read these caveats before you apply the patch.',
-  failed: 'The migrated code isn’t verified. Don’t apply the patch as it stands.',
+  completed_with_warnings: 'Not everything could be verified. Read these caveats before you use the migrated code.',
+  failed: 'The migrated code isn’t verified. Don’t use it as it stands.',
   cancelled: 'The run was stopped before it finished. Units verified before that stay verified; the rest weren’t migrated.',
 };
 const time = (ms: number) => new Date(ms).toLocaleTimeString('en-GB');

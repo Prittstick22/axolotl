@@ -290,6 +290,23 @@ async def test_the_export_holds_the_project_and_the_run_files_only(
     ]
 
 
+async def test_the_export_carries_the_module_docs_under_axolotl(artefact_dir, tmp_path):
+    """#39: the docs it is handed go under axolotl/docs/, next to the run's files."""
+    import zipfile
+
+    tree = tmp_path / "accepted"
+    tree.mkdir()
+    (tree / "pricing.py").write_text("x = 1\n", encoding="utf-8")
+    docs = {"README.md": "# Documentation\n", "migrated/pricing.py.md": "# pricing\n"}
+
+    report, plan = make_export_inputs()
+    path = await artefacts.write_export(report, plan, REVISION, tree, docs=docs)
+
+    with zipfile.ZipFile(path) as archive:
+        assert archive.read("axolotl/docs/migrated/pricing.py.md") == b"# pricing\n"
+        assert "axolotl/docs/README.md" in archive.namelist()
+
+
 def test_a_partial_run_says_which_files_are_still_legacy():
     report, plan = make_export_inputs()
     notes = artefacts.migration_notes(report, plan, REVISION)

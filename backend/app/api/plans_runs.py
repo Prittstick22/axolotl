@@ -9,6 +9,7 @@ the API is the boundary that protects the held-out suite, not the sandbox.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,7 @@ from app.reports.builder import get_report
 # handler in errors.py: `/system/status` must answer 200 while *reporting* mongodb as
 # unavailable, and a global handler would turn that status report into a 503.
 router = APIRouter(tags=["plans", "runs"], route_class=DatabaseAwareRoute)
+log = logging.getLogger(__name__)
 
 
 class CreatePlanRequest(BaseModel):
@@ -418,5 +420,14 @@ async def export_run(run_id: str) -> FileResponse:
             status_code=404,
             details={"run_id": run_id, "revision": revision},
         )
-    path = await artefacts.write_export(report, await store.get_plan(run.plan_id), revision, tree)
+    try:
+        from app.docs import export_files
+
+        docs = await export_files(run_id)
+    except Exception as exc:  # noqa: BLE001 - the docs are extra; never fail the export
+        log.warning("export of %s ships without docs: %s", run_id, exc)
+        docs = None
+    path = await artefacts.write_export(
+        report, await store.get_plan(run.plan_id), revision, tree, docs=docs,
+    )
     return FileResponse(path, filename=f"{run_id}-migrated.zip")

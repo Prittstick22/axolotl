@@ -1947,3 +1947,35 @@ three tests; the allowlist test fails if a write tool is added to the set.
 872 offline backend tests (39 new), ruff clean. The model is stubbed throughout, so
 none of this has yet run against the real Gemini: the live path is unexercised and the
 pane (Dev 5, #123) is not built.
+
+## 24 Oct 2026 — Dev 1: documentation for the legacy and the migrated code (#39)
+
+Per-module docs for both sides of a migration, in the app and in the export.
+
+- **Facts from the parse tree, for free.** `GET /repositories/{id}/docs` and
+  `GET /runs/{id}/docs` read both trees on request with `analyse_module` and
+  `build_edges`, as #34 does: docstring as written, public classes, methods and functions
+  with signatures, what each module depends on and what uses it. No model call.
+- **The migrated side says what changed.** The unit's verdict and attempts, Argon's own
+  summary of the accepted patch (from `patch_proposed` in the journal, so free), and
+  the module's dependency changes from #34's `compare_trees`.
+- **One purpose sentence per module, on request.** `POST /repositories/{id}/docs`
+  writes the missing ones in the background with `describe_chunks`, unchanged: the same
+  untrusted-code prompt, pacing and quota handling as search. It reuses a cached purpose
+  or the search index's module description first. Test modules are never sent.
+  `GEMINI_DESCRIPTION_MODEL=gemini-3.8-flash`, so no Argon credit is spent.
+- **Labelled and fenced.** Model text says who wrote it and "not verified", and is
+  HTML-escaped. Docstrings sit in a fence longer than any run of backticks they contain,
+  so code can't inject Markdown.
+- **In the export.** `GET /runs/{id}/export` adds `axolotl/docs/` (an index, plus legacy
+  and migrated pages) from cached purposes only. A docs failure never fails the export.
+
+Live on chess (`run_70e126c3acf2`): both GETs made 0 model calls; generation made 14
+Flash calls, all successful, `ready` 14/14; a second POST made 0; the export grew to 50
+files, 31 of them docs, still with no `.patch`. 914 offline backend tests (17 new;
+mutations that send test modules or fix the fence at three backticks each fail a test),
+ruff clean.
+
+Found on the way, not fixed here: `dotted_name_for` turns `local_chess/__main__.py` into
+`local_chess..main.`, so its `from .cli import ConsoleUI` resolves to the package
+instead of `local_chess/cli.py`.

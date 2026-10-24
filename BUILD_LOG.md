@@ -1714,3 +1714,32 @@ fixture is **not deleted yet**: it is the only project the sandbox can run today
 test files plus the CI sandbox job use it. It is now described as the test fixture, and
 [#54](https://github.com/Prittstick22/axolotl/issues/54) deletes it once chess runs end to end and
 the tests move to chess.
+
+---
+
+## Dev 4 review: issue #2 verification safeguards (24 Oct 2026)
+
+Reviewed the existing fix from `45fe5a5` on top of main at `4676b3b`. An empty
+comparison gate stays skipped and optional; no further change to the pass rule was
+needed. Clarified its comment: held-out cases, impacted cases, compile, existing
+tests and sandbox policy still apply.
+
+Expanded `backend/tests/unit/test_verification_gates.py` from 2 to 15 test cases.
+The case-loader test double now honours unit IDs and held-out visibility, so tests
+detect a verifier that accidentally excludes hidden cases or a dependant's cases.
+Coverage includes hidden-only matches and mismatches, dependent-unit matches and
+mismatches when the current unit has no cases, missing baseline/candidate outcomes,
+compile failures, existing-test failures, timeouts, kills, output limits, Docker
+errors and an unavailable runner.
+
+Validation on this machine: 15 focused tests passed; the complete offline backend
+suite passed (658 passed, 65 deselected); backend ruff and `git diff --check` passed.
+The only pytest warning was the existing Starlette/httpx deprecation warning.
+
+The 9 real-container tests were attempted but skipped because the sandbox runner
+is unavailable here. This machine has no configured `.env`, so no new live migration
+was performed. The prior live evidence remains `run_e5380c4d180c`, recorded above:
+`storage.py` passed on its first attempt and `orders.py` passed afterwards. The
+issue author's [review request](https://github.com/Prittstick22/axolotl/issues/2#issuecomment-6383693535)
+also confirms the fix was checked on live runs. The PR's sandbox CI job builds the
+runner and exercises the real container, including the wrong-rounding regression.

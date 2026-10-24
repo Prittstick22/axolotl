@@ -423,8 +423,8 @@ def _comparison_gate(
     return GateResult(
         gate=name,  # type: ignore[arg-type]
         status=status,  # type: ignore[arg-type]
-        # A gate with nothing to compare can't fail the unit: a unit with no cases
-        # is checked by the compile and existing-test gates alone (plans.py says so).
+        # Only an empty comparison gate is optional. Held-out cases still count;
+        # compile, existing tests, sandbox policy and any impacted cases still apply.
         required=bool(comparisons),
         summary=(
             f"{counts['match']} case(s) agree with the baseline, "

@@ -254,6 +254,83 @@ export interface DependencyChanges {
   warnings: string[];
 }
 
+// ---------- docs (#39) ----------
+export interface DocsCallable {
+  name: string;
+  signature: string;
+  async: boolean;
+  decorators: string[];
+  /** first docstring line, as written in the code: untrusted */
+  summary: string | null;
+  line: number;
+}
+
+export interface DocsFacts {
+  module_id: string;
+  path: string;
+  dotted: string;
+  is_test: boolean;
+  docstring: string | null;
+  classes: { name: string; bases: string[]; summary: string | null; line: number; methods: DocsCallable[] }[];
+  functions: DocsCallable[];
+  depends_on: string[];
+  packages: string[];
+  used_by: string[];
+  parsed: boolean;
+  python2_syntax: boolean;
+  warnings: string[];
+}
+
+export interface DocsPurpose {
+  text: string;
+  model: string;
+  origin: 'generated' | 'search_index';
+  generated_at: string | null;
+}
+
+export interface DocsChange {
+  run_id: string;
+  unit: { unit_id: string; status: UnitStatus; attempts: number } | null;
+  /** Argon's patch summary, only for a passed unit */
+  summary: string | null;
+  dependencies: DependencyModuleChange | null;
+}
+
+export interface DocsProse {
+  state: 'not_generated' | 'generating' | 'ready' | 'partial' | 'failed';
+  done: number;
+  total: number;
+  model: string | null;
+  warnings: string[];
+}
+
+export interface DocsModule {
+  module_id: string;
+  path: string;
+  is_test: boolean;
+  /** null for a module the migration added */
+  legacy: { facts: DocsFacts; purpose: DocsPurpose | null } | null;
+  migrated?: { facts: DocsFacts; change: DocsChange } | null;
+}
+
+export interface RepositoryDocs {
+  repository_id: string;
+  python: string | null;
+  prose: DocsProse;
+  modules: DocsModule[];
+  warnings: string[];
+}
+
+export interface RunDocs {
+  run_id: string;
+  repository_id: string;
+  revision: string | null;
+  python: { legacy: string | null; migrated: string | null };
+  prose: DocsProse;
+  modules: DocsModule[];
+  warnings: string[];
+}
+
 // ---------- planning ----------
 export interface MigrationTarget {
   target_id: string;

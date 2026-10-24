@@ -11,13 +11,16 @@ import type {
   Artefact,
   DemoFixture,
   DependencyChanges,
+  DocsProse,
   GraphPayload,
   IndexStatus,
   MigrationPlan,
   MigrationTarget,
   ModuleDetail,
+  RepositoryDocs,
   RepositoryRecord,
   RunDiff,
+  RunDocs,
   RunEvent,
   RunReport,
   RunSummary,
@@ -161,6 +164,21 @@ export function searchRepository(repoId: string, q: string, mode: SearchMode): P
 /** GET /api/v1/runs/{run_id}/dependency-changes - legacy vs last accepted revision (#34). */
 export function getDependencyChanges(runId: string): Promise<DependencyChanges> {
   return apiFetch<DependencyChanges>(`${run(runId)}/dependency-changes`);
+}
+
+/** GET /api/v1/repositories/{repo_id}/docs - the legacy code's documentation (#39). */
+export function getRepositoryDocs(repoId: string): Promise<RepositoryDocs> {
+  return apiFetch<RepositoryDocs>(`${repo(repoId)}/docs`);
+}
+
+/** POST /api/v1/repositories/{repo_id}/docs - 202; writes each module's purpose, one model call per module. */
+export function generateDocs(repoId: string): Promise<{ repository_id: string; prose: DocsProse }> {
+  return post(`${repo(repoId)}/docs`);
+}
+
+/** GET /api/v1/runs/{run_id}/docs - legacy and migrated side by side (#39). */
+export function getRunDocs(runId: string): Promise<RunDocs> {
+  return apiFetch<RunDocs>(`${run(runId)}/docs`);
 }
 
 const post = <T>(path: string, body?: unknown) =>

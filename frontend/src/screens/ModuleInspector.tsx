@@ -2,6 +2,7 @@ import { CornersInIcon, CornersOutIcon, WarningIcon, XIcon } from '@phosphor-ico
 import { useQuery } from '@tanstack/react-query';
 import { cn } from 'cn';
 import { lazy, Suspense, useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 
 import { getModule } from '@/api/client';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -72,6 +73,14 @@ export function ModuleInspector({ repoId, moduleId, graph, runId, unit, expanded
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <StatusBadge status={node.status} />
             <span className="text-sm text-muted-foreground">{runId ? `In run ${runId}` : 'No run yet'}</span>
+            {node.path && (
+              <Link
+                to={{ pathname: `/repos/${encodeURIComponent(repoId)}/docs`, search: `?${new URLSearchParams({ ...(runId && { run: runId }), path: node.path })}` }}
+                className="ml-auto text-sm underline underline-offset-4"
+              >
+                Docs
+              </Link>
+            )}
           </div>
         )}
       </Sec>

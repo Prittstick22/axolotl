@@ -1,18 +1,18 @@
 import { CaretRightIcon, DownloadSimpleIcon, InfoIcon, ListChecksIcon, XCircleIcon, type Icon } from '@phosphor-icons/react';
-import { useQuery, type UseQueryResult } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { cn } from 'cn';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useOutletContext, useParams, useSearchParams } from 'react-router-dom';
 
-import { API_BASE, ApiError, exportUrl, getPlan, getReport, listArtefacts } from '@/api/client';
+import { API_BASE, ApiError, exportUrl, getPlan, getReport } from '@/api/client';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { narrativeBlocks } from '@/lib/narrative';
 import { CLOSING_WAIT_MS, isLive, POLL_MS, useRun } from '@/lib/run';
 import { RUN_STATE, TONE_BORDER, TONE_TEXT, TONE_TINT } from '@/lib/status';
 import { Field } from '@/screens/Overview';
-import type { Artefact, MigrationPlan, RunReport, RunSummary } from '@/types/contracts';
+import type { MigrationPlan, RunReport, RunSummary } from '@/types/contracts';
 
 // worker.py's final_verdict: `completed` only when every unit and the final gates passed.
 const VERDICT_TEXT: Record<RunReport['verdict'], string> = {
@@ -22,7 +22,6 @@ const VERDICT_TEXT: Record<RunReport['verdict'], string> = {
   failed: 'The migrated code isn’t verified. Don’t apply the patch as it stands.',
   cancelled: 'The run was stopped before it finished. Units verified before that stay verified; the rest weren’t migrated.',
 };
-const KIND: Record<Artefact['kind'], string> = { patch: 'Patch', archive: 'Archive', report: 'Report' };
 const time = (ms: number) => new Date(ms).toLocaleTimeString('en-GB');
 
 function Empty({ icon: Icon, title, failed, children }: { icon: Icon; title: string; failed?: boolean; children: ReactNode }) {
@@ -84,55 +83,33 @@ function Narrative({ text }: { text: string | null }) {
   );
 }
 
-function Downloads({ query, report }: { query: UseQueryResult<Artefact[]>; report: RunReport }) {
-  const artefacts = query.data;
-  const missing = (Object.keys(KIND) as Artefact['kind'][]).filter((k) => !artefacts?.some((a) => a.kind === k));
+function Downloads({ report }: { report: RunReport }) {
+  // With nothing accepted the project is still the legacy code and the API answers 404,
+  // so the panel says that instead of offering a button that fails when clicked.
+  const accepted = report.units.some((u) => u.accepted_revision);
   return (
     <Panel title="Downloads">
-      {/* With nothing accepted the project is still the legacy code, and the API answers 404. */}
-      {report.units.some((u) => u.accepted_revision) && (
+      {accepted ? (
         <>
           <a href={exportUrl(report.run_id)} className={cn(buttonVariants(), 'self-start')}>
             <DownloadSimpleIcon aria-hidden />
-            Export migrated project
+            Download migrated codebase (.zip)
           </a>
           <p className="text-sm text-muted-foreground">
-            A ZIP of the project at the final revision. Its <code className="font-mono">axolotl/MIGRATION.md</code> says which files were migrated and which are
-            still legacy.
+            A ZIP of the whole project at the final revision. Its <code className="font-mono">axolotl/MIGRATION.md</code> inside says which files were migrated
+            and verified. It is built on the machine that ran the migration, so the download fails elsewhere.
           </p>
         </>
-      )}
-      {query.isError ? (
-        <p className="text-sm text-muted-foreground">Couldn’t load the file list: {query.error.message}</p>
-      ) : !artefacts ? (
-        <p className="text-sm text-muted-foreground">Loading the files…</p>
-      ) : !artefacts.length ? (
-        <p className="text-sm text-muted-foreground">No files were returned for this run.</p>
       ) : (
-        <>
-          <div className="flex flex-wrap gap-2">
-            {artefacts.map((a) => (
-              <a
-                key={a.artefact_id}
-                href={new URL(a.download_url, new URL(API_BASE, location.href)).href}
-                title={`SHA-256 ${a.sha256}`}
-                className={buttonVariants({ variant: 'outline' })}
-              >
-                <DownloadSimpleIcon aria-hidden />
-                {KIND[a.kind]}
-              </a>
-            ))}
-          </div>
-          {missing.length > 0 && (
-            <p className="text-sm text-muted-foreground">No {missing.map((k) => KIND[k].toLowerCase()).join(' or ')} was returned for this run.</p>
-          )}
-        </>
+        <p className="text-sm text-muted-foreground">
+          No unit was accepted in this run, so the project is still the legacy code and there is nothing to download.
+        </p>
       )}
     </Panel>
   );
 }
 
-function Report({ report, plan, artefacts, run }: { report: RunReport; plan?: MigrationPlan; artefacts: UseQueryResult<Artefact[]>; run?: RunSummary }) {
+function Report({ report, plan, run }: { report: RunReport; plan?: MigrationPlan; run?: RunSummary }) {
   const { icon: VerdictIcon, label, tone } = RUN_STATE[report.verdict];
   const paths = new Map(plan?.units.map((u) => [u.unit_id, u.file_paths.join(', ')]));
   const rank = (id: string) => plan?.order.indexOf(id) ?? 0;
@@ -240,7 +217,7 @@ function Report({ report, plan, artefacts, run }: { report: RunReport; plan?: Mi
             </ul>
           </Panel>
         )}
-        <Downloads query={artefacts} report={report} />
+        <Downloads report={report} />
         <Narrative text={report.narrative} />
       </div>
     </div>
@@ -268,7 +245,6 @@ export default function ReportScreen() {
     refetchInterval: (q) => (waiting(q.state.error, q.state.errorUpdatedAt) ? POLL_MS : false),
   });
   const plan = useQuery({ queryKey: ['plan', run.data?.plan_id], queryFn: () => getPlan(run.data!.plan_id), enabled: Boolean(run.data) });
-  const artefacts = useQuery({ queryKey: ['artefacts', runId], queryFn: () => listArtefacts(runId!), enabled: report.isSuccess });
   const toRun = { pathname: `/repos/${encodeURIComponent(repoId)}/run`, search };
 
   if (!runId) {
@@ -294,7 +270,7 @@ export default function ReportScreen() {
           navSlot,
         )}
       {report.data ? (
-        <Report report={report.data} plan={plan.data} artefacts={artefacts} run={run.data} />
+        <Report report={report.data} plan={plan.data} run={run.data} />
       ) : err instanceof ApiError && err.code === 'REPORT_NOT_READY' ? (
         waiting(err, report.errorUpdatedAt) ? (
           <Empty icon={ListChecksIcon} title="Report not ready yet">

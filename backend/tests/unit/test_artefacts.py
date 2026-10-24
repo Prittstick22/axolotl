@@ -268,6 +268,9 @@ async def test_the_export_holds_the_project_and_the_run_files_only(
     (tree / ".pytest_cache" / "v").write_text("x", encoding="utf-8")
     (tree / "__pycache__").mkdir()
     (tree / "__pycache__" / "pricing.cpython-312.pyc").write_bytes(b"\x00")
+    # Recorded on purpose: people clicked "export migrated project" and got the
+    # diff, because a recorded patch artefact was copied in. A patch existing is
+    # the setup for that regression, so it stays and must not reach the zip.
     patch = artefact_dir / "migration.patch"
     patch.write_text("--- a/pricing.py\n", encoding="utf-8")
     recorded.append({"run_id": "run_000000000001", "kind": "patch", "path": str(patch)})
@@ -276,10 +279,15 @@ async def test_the_export_holds_the_project_and_the_run_files_only(
     path = await artefacts.write_export(report, plan, REVISION, tree)
 
     with zipfile.ZipFile(path) as archive:
-        assert sorted(archive.namelist()) == [
-            "axolotl/MIGRATION.md", "axolotl/migration.patch", "axolotl/report.json",
-            "pricing.py", "tests/cases.json",
-        ]
+        names = sorted(archive.namelist())
+
+    assert not any(n.endswith(".patch") for n in names), (
+        "the export is the project; the diff is its own artefact"
+    )
+    assert names == [
+        "axolotl/MIGRATION.md", "axolotl/report.json",
+        "pricing.py", "tests/cases.json",
+    ]
 
 
 def test_a_partial_run_says_which_files_are_still_legacy():
@@ -290,3 +298,5 @@ def test_a_partial_run_says_which_files_are_still_legacy():
     assert "- pricing.py" in migrated
     assert "- refunds.py (blocked)" in legacy.split("##")[0]
     assert "Agreement shown only for 10 tested case(s)." in notes
+    # It used to promise a migration.patch that is no longer in the zip.
+    assert ".patch" not in notes

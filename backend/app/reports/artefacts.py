@@ -6,8 +6,10 @@ Three kinds, per SHARED_CONTRACTS §6 (`kind: "patch" | "report" | "archive"`):
   archive  zip of the final accepted tree
   report   the RunReport as JSON
 
-The project export (#40) bundles all three with a MIGRATION.md. It is built on request
-and not recorded, so §6 keeps its three kinds.
+The project export (#40) is the migrated project itself, plus a MIGRATION.md and the
+report under `axolotl/`. Not the patch: a download labelled "migrated project" that
+delivered a diff was the bug. It is built on request and not recorded, so §6 keeps
+its three kinds.
 
 Files live on disk under `WORKSPACE_ROOT/artefacts/<run_id>/`. Only metadata, the path
 and a sha256 go in Mongo - never blobs (§9).
@@ -124,27 +126,27 @@ async def write_export(
     Only the project. The tree is a copy of the snapshot, which ingestion already
     filtered and which cases.py checks for held-out cases; the same filter runs again
     here, so a cache or a `.env` written into the tree since cannot ship.
+
+    The diff is deliberately **not** in here. People clicked a download expecting the
+    migrated codebase and got `migration.patch`, so the zip is now the project and the
+    patch stays its own artefact (`kind: "patch"`), downloaded on its own.
     """
     path = artefact_root(report.run_id) / "migrated_project.zip"
-    stored = {a["kind"]: Path(a["path"]) for a in await store.list_artefacts(report.run_id)}
-    patch = stored["patch"] if "patch" in stored and stored["patch"].is_file() else None
 
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
         for item in sorted(tree.rglob("*")):
             name = item.relative_to(tree).as_posix()
             if item.is_file() and not is_ignored(name):
                 _add(archive, name, item.read_bytes())
-        notes = migration_notes(report, plan, revision, bool(patch))
-        _add(archive, "axolotl/MIGRATION.md", notes.encode())
+        _add(archive, "axolotl/MIGRATION.md",
+             migration_notes(report, plan, revision).encode())
         _add(archive, "axolotl/report.json", json.dumps(
             report.model_dump(mode="json"), indent=2, sort_keys=True).encode())
-        if patch:
-            _add(archive, "axolotl/migration.patch", patch.read_bytes())
     return path
 
 
 def migration_notes(
-    report: RunReport, plan: MigrationPlan, revision: str, with_patch: bool = True
+    report: RunReport, plan: MigrationPlan, revision: str
 ) -> str:
     """Which files were migrated and verified, and which still hold the legacy code.
 
@@ -175,8 +177,7 @@ def migration_notes(
         "",
         *[f"- {c}" for c in report.coverage_caveats],
         "",
-        "`report.json` is the full report"
-        + (" and `migration.patch` the diff from the imported code." if with_patch else "."),
+        "`report.json` is the full report.",
         "",
     ])
 

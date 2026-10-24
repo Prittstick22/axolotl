@@ -147,6 +147,7 @@ async def capture_baseline(
     cases_file = write_cases_file(
         [c.case_id for c in cases], snapshot, project_root(),
         _run_cases_dir(run_id) / "baseline.json",
+        fixture_id=await fixture_for_repository(repo_id),
     )
 
     raw, result = await runner.run_behaviour_cases(
@@ -345,6 +346,14 @@ async def repository_for_run(run_id: str) -> str:
     return str(document["repository_id"]) if document else ""
 
 
+async def fixture_for_repository(repo_id: str) -> str | None:
+    """Use the import's trusted identity even after candidate source changes."""
+    from app.persistence import graphstore
+
+    repository = await graphstore.get_repository(repo_id)
+    return repository.demo_fixture_id if repository.executable else None
+
+
 # --------------------------------------------------------------------------
 # final verification
 # --------------------------------------------------------------------------
@@ -427,6 +436,7 @@ async def _differential(
     cases_file = write_cases_file(
         [c.case_id for c in cases], candidate, project_root(),
         _run_cases_dir(run_id) / f"{label}-{secrets.token_hex(4)}.json",
+        fixture_id=await fixture_for_repository(await repository_for_run(run_id)),
     )
     raw, result = await runner.run_behaviour_cases(candidate, cases_file, runtime=runtime)
     new_outcomes = _outcomes_by_case(raw, cases)

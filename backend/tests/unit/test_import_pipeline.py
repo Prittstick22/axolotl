@@ -192,6 +192,58 @@ async def test_an_ordinary_folder_upload_is_never_executable(store):
 
     assert record.executable is False
     assert record.demo_fixture_id is None
+    assert store["cases"] == []  # #29: no orders cases on an unrelated repository.
+
+
+@pytest.mark.parametrize("source", ["folder", "zip"])
+async def test_chess_import_routes_cases_without_exposing_hidden_inputs(store, tmp_path, source):
+    import runpy
+
+    from app.graph import _nodes_from_symbols
+    from app.graph.builder import to_networkx
+    from app.orchestration.scheduler import build_units, impacted_units
+
+    folder = chess_folder()
+    if source == "folder":
+        record = await ingestion.import_repository(folder=folder)
+    else:
+        packager = runpy.run_path(str(ingestion.repo_root() / "demo/package_chess.py"))
+        archive = packager["build_archive"](
+            ingestion.repo_root() / "demo/chess", tmp_path / "chess.zip",
+        )
+        record = await ingestion.import_repository(zip_path=archive)
+
+    cases = store["cases"]
+    assert record.demo_fixture_id == "chess"
+    assert len(cases) == 24
+    assert sum(c.visibility == "visible" for c in cases) == 12
+    assert sum(c.visibility == "held_out" for c in cases) == 12
+    assert all(c.case_id.startswith("chess_") for c in cases)
+    snapshot = tmp_path / record.repository_id
+    assert not (snapshot / "challenge_cases").exists()
+    assert not (snapshot / "chess_cases.py").exists()
+    assert "chess_hidden_" not in str(store["chunks"])
+
+    graph = to_networkx(_nodes_from_symbols(store["symbols"]), store["edges"])
+    units = build_units(graph, {
+        s.module_id: s.path for s in store["symbols"] if s.kind == "module"
+    })
+    cli = next(u for u in units if "local_chess/cli.py" in u.file_paths)
+    assert {c.unit_id for c in cases} == {cli.unit_id}
+    # Lower-level changes still run the session cases as impacted checks.
+    for path in ["local_chess/game.py", "local_chess/rules.py", "local_chess/game_state.py",
+                 "local_chess/renderer.py", "local_chess/pieces.py"]:
+        unit = next(u for u in units if path in u.file_paths)
+        assert cli.unit_id in impacted_units(unit.unit_id, units)
+
+
+async def test_modified_chess_upload_gets_no_builtin_hidden_cases(store):
+    folder = chess_folder() + [("extra.py", b"x = 1\n")]
+    record = await ingestion.import_repository(folder=folder, name="chess")
+    assert record.executable is False
+    assert record.demo_fixture_id is None
+    assert len(store["cases"]) == 12
+    assert all(c.visibility == "visible" for c in store["cases"])
 
 
 async def test_importing_both_a_folder_and_a_fixture_is_refused(store):

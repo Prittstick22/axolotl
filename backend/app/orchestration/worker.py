@@ -29,6 +29,7 @@ from app.orchestration.ids import new_run_id
 from app.orchestration.scheduler import eligible_units, impacted_units, units_to_skip
 from app.orchestration.states import (
     TERMINAL_RUN_STATES,
+    TERMINAL_UNIT_STATUSES,
     final_verdict,
     transition_run,
     transition_unit,
@@ -566,10 +567,13 @@ async def _fail(run: RunSummary, error: str) -> None:
     # straight out of GET /runs/{id} - the API is a read path like any other.
     run.error = events.truncate(events.redact(error))
     await _save(run)
-    await _transition(run, "failed")
+    # The error event before the terminal transition (#16): a client that polls only
+    # while the run is non-terminal, as §9.3 says, would otherwise stop without ever
+    # seeing why the run failed.
     await events.append_event(
         run.run_id, "error", payload={"code": "RUN_FAILED", "message": error}
     )
+    await _transition(run, "failed")
 
 
 async def _is_cancelled(run: RunSummary) -> bool:
@@ -589,7 +593,7 @@ async def _is_cancelled(run: RunSummary) -> bool:
     # in the journal - writing straight onto the document would leave the audit
     # trail (T-15) claiming those units were still running.
     for state in list(run.units):
-        if state.status not in {"passed", "blocked", "failed", "skipped"}:
+        if state.status not in TERMINAL_UNIT_STATUSES:
             await _set_unit(run, state.unit_id, "skipped")
             await events.append_event(
                 run.run_id, "unit_blocked", unit_id=state.unit_id,
@@ -597,9 +601,10 @@ async def _is_cancelled(run: RunSummary) -> bool:
                          "verification_id": None},
             )
 
-    await _transition(run, "cancelled")
+    # The closing event before the terminal transition (#16), as in `_fail`.
     await events.append_event(
         run.run_id, "error",
         payload={"code": "RUN_CANCELLED", "message": "cancelled by request"},
     )
+    await _transition(run, "cancelled")
     return True

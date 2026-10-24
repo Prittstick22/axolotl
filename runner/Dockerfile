@@ -1,13 +1,19 @@
 # Axolotl sandbox runner - owner: Dev 4.
 #
-# Build from the repo root:
+# One Dockerfile, one image per interpreter (#22). Build from the repo root:
 #     docker build -t axolotl-runner:latest runner/
+#     docker build -t axolotl-runner:py2.7 --build-arg PYTHON_VERSION=2.7 --build-arg PYTEST_VERSION=4.6.11 runner/
+#     docker build -t axolotl-runner:py3.14 --build-arg PYTHON_VERSION=3.14 --build-arg PYTEST_VERSION=8.4.2 runner/
+# The defaults build the original 3.12 image unchanged. pytest 4.6 is the last
+# release that runs on Python 2.7.
 #
 # This image never contains project code, cases or credentials. The candidate
 # tree, the harness and the cases file are all bind-mounted read-only at run
 # time, and no environment variables are passed in. See runner/policy.md.
 
-FROM python:3.12-slim
+ARG PYTHON_VERSION=3.12
+FROM python:${PYTHON_VERSION}-slim
+ARG PYTEST_VERSION=8.3.3
 
 # /code is read-only at run time, so bytecode cannot be written next to sources.
 # PYTHONDONTWRITEBYTECODE is not enough: `compileall` writes bytecode by design and
@@ -28,8 +34,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # pytest is preinstalled so no gate ever needs network access at run time
 # (the container runs with --network none).
-RUN pip install --no-cache-dir "pytest==8.3.3" \
-    && python -m compileall -q /usr/local/lib/python3.12 >/dev/null 2>&1 || true
+# The stdlib is precompiled at build time because nothing can write bytecode at run
+# time; sysconfig finds it on every interpreter instead of a hard-coded 3.12 path.
+RUN pip install --no-cache-dir "pytest==${PYTEST_VERSION}" \
+    && python -c "import compileall, sysconfig; compileall.compile_dir(sysconfig.get_paths()['stdlib'], quiet=1)" >/dev/null 2>&1 || true
 
 WORKDIR /
 

@@ -10,6 +10,7 @@ import pytest
 
 import app.verification as verification
 from app.models.contracts import BehaviourCase, CaseOutcome, MigrationUnit, Workspace
+from app.sandbox import runtimes
 from app.sandbox.runner import RunResult
 
 UNIT = MigrationUnit(
@@ -33,13 +34,13 @@ def world(monkeypatch):
     state = {"cases": [], "new_value": 1}
     ok = RunResult(exit_code=0, stdout="1 passed", stderr="")
 
-    async def status():
+    async def status(_runtime=None):
         return {"available": True, "mode": "trusted_docker"}
 
-    async def clean(_candidate: Path):
+    async def clean(_candidate: Path, **_kwargs):
         return ok
 
-    async def behaviour(_candidate, _cases_file):
+    async def behaviour(_candidate, _cases_file, **_kwargs):
         return [{"case_id": c.case_id, "status": "ok", "value": state["new_value"]}
                 for c in state["cases"]], ok
 
@@ -61,6 +62,12 @@ def world(monkeypatch):
 
     async def fixture(_repo_id):
         return "legacy_orders"
+    async def pair(_run_id):
+        return runtimes.for_target(None)
+
+    async def probed(_runtime, _digest=None):
+        return "3.12.15"
+
 
     monkeypatch.setattr(verification.runner, "runner_status", status)
     monkeypatch.setattr(verification.runner, "run_compileall", clean)
@@ -70,6 +77,9 @@ def world(monkeypatch):
     monkeypatch.setattr(verification, "repository_for_run", repo)
     monkeypatch.setattr(verification, "fixture_for_repository", fixture)
     monkeypatch.setattr(verification, "write_cases_file", lambda *_a, **_kw: Path("cases.json"))
+    monkeypatch.setattr(verification, "runtimes_for_run", pair)
+    monkeypatch.setattr(verification.runner, "probe_python", probed)
+
     monkeypatch.setattr(verification.store, "get_baseline_outcomes", baseline)
     monkeypatch.setattr(verification.store, "save_verification", nothing)
     monkeypatch.setattr(verification.store, "save_counterexamples", nothing)
@@ -131,7 +141,7 @@ async def test_a_unit_with_only_held_out_cases_is_still_compared(world):
 async def test_no_cases_does_not_bypass_other_gates(
     world, monkeypatch, method, runner_result, gate_name, gate_status,
 ):
-    async def failed(_candidate):
+    async def failed(_candidate, **_kwargs):
         return runner_result
 
     monkeypatch.setattr(verification.runner, method, failed)
@@ -145,7 +155,7 @@ async def test_no_cases_does_not_bypass_other_gates(
 
 
 async def test_no_cases_does_not_bypass_an_unavailable_runner(world, monkeypatch):
-    async def unavailable():
+    async def unavailable(_runtime=None):
         return {"available": False, "mode": "disabled"}
 
     monkeypatch.setattr(verification.runner, "runner_status", unavailable)
@@ -165,7 +175,7 @@ async def test_missing_case_outcomes_are_inconclusive_not_skipped(
     async def missing_baseline(_run_id):
         return {}
 
-    async def missing_candidate(_candidate, _cases_file):
+    async def missing_candidate(_candidate, _cases_file, **_kwargs):
         return [], RunResult(0, "", "")
 
     if missing_side == "baseline":

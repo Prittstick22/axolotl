@@ -66,8 +66,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build the runner image
-        run: docker build -t axolotl-runner:latest runner/
+      - name: Build the runner images
+        run: |
+          docker build -t axolotl-runner:latest runner/
+          docker build -t axolotl-runner:py2.7 --build-arg PYTHON_VERSION=2.7 --build-arg PYTEST_VERSION=4.6.11 runner/
+          docker build -t axolotl-runner:py3.14 --build-arg PYTHON_VERSION=3.14 --build-arg PYTEST_VERSION=8.4.2 runner/
 
       - name: Build chess behaviour test images
         run: |

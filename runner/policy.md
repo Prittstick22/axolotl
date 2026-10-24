@@ -37,7 +37,7 @@ secret values redacted.
 
 | Gate | Command |
 |---|---|
-| `compile` | `python -m compileall -q /code` |
+| `compile` | `python -m compileall -q /code` (Python 3), `python /harness/compile_tree.py /code` (Python 2.7) |
 | `differential` / `impacted_tests` | `python /harness/run_cases.py --code /code --cases /cases.json` |
 | `existing_tests` / `final_integration` | `pytest -q -p no:cacheprovider /code/tests` |
 
@@ -45,6 +45,20 @@ secret values redacted.
 bytecode by design and ignores `PYTHONDONTWRITEBYTECODE`; without it the compile gate
 fails on the read-only `/code`. `PYTHONPATH=/code` is set because pytest's prepend
 import mode would otherwise only put `/code/tests` on the path.
+
+### One image per interpreter (#22)
+
+The same Dockerfile builds `axolotl-runner:latest` (Python 3.12, the default),
+`axolotl-runner:py2.7` and `axolotl-runner:py3.14`. Every image runs under the
+identical profile above; only the interpreter differs. `python2_to_3` records the
+baseline on 2.7 and runs every candidate gate on 3.14 (`app/sandbox/runtimes.py`).
+
+Python 2.7 has no `PYTHONPYCACHEPREFIX`, so `compileall` would try to write `.pyc`
+files into the read-only `/code` and fail. On 2.7 the compile gate runs
+`harness/compile_tree.py`, which compiles every file in memory and writes nothing.
+The harness runs unchanged on 2.7 and 3, and an unchanged program encodes to the
+same outcomes on both. Each verdict records the interpreter version probed from
+inside the container and the image digest, never the intended version.
 
 ## Only trusted fixtures execute
 

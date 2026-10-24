@@ -77,7 +77,10 @@ own reproducible interpreters.
 1. **Baseline:** use the refreshed Python 2.7-compatible directory, not the stale
    ZIP. Preserve it unchanged in snapshots and keep candidate workspaces separate.
    The upstream README's relative ZIP/workspace references describe its source folder.
-2. **Interpreter-specific runner (Dev 4):** the current image uses Python 3.12 and
+2. **Interpreter-specific runner:** done in #22. `python2_to_3` baselines on the
+   `axolotl-runner:py2.7` image and verifies candidates on `axolotl-runner:py3.14`,
+   and each verdict records the probed interpreter and image digest. The rest of this
+   item is the original note. The current image uses Python 3.12 and
    verification records that runtime. Baseline execution needs Python 2.7, candidates
    need Python 3.14, and harness/test tooling must be compatible with each interpreter.
    Report the actual runtime/image digest. Do not simply relabel the current image.
@@ -124,8 +127,8 @@ parsed statically and never executed; it is not proof of interpreter compatibili
 
 Exact copies of the trusted chess tree can now earn execution eligibility through
 the content-matching flow from #21; modified or unrelated uploads stay static-only.
-The Python 2 migration target still requires #22's production dual-runtime runner
-and gate support. Successful source inspection is not a completed upgrade.
+The production dual-runtime runner and gates landed in #22. Successful source
+inspection alone is not a completed upgrade; a real run must still verify its patch.
 
 ## Behaviour suite (#23)
 
@@ -185,5 +188,6 @@ rule must keep visible cases passing while hidden cases catch the regression.
 CI builds both images and fails if they are unavailable instead of accepting a skip.
 
 These images test the cases/harness only. They do not contain pytest and do not
-implement production runtime selection, baseline metadata or the remaining #22
-gates. They must not be used to claim a completed Axolotl migration.
+implement production runtime selection or baseline metadata; the separate #22
+production images provide those gates. They must not be used to claim a completed
+Axolotl migration.

@@ -149,16 +149,25 @@ the gotchas behind them.
 | Scheduler, state machine, event journal, plans, controller, run worker, reports | ✅ |
 | All 15 of Dev 2's §6 endpoints | ✅ registered |
 | Demo fixture + sandbox runner | ✅ proven in a container |
-| Frontend | status chips only — 8 screens outstanding *(Dev 5)* |
+| All 8 frontend screens | ✅ *(Dev 5)* — Overview, Graph, Module inspector, New migration, Plan, Run, Verification, Report |
 | Import, AST, dependency graph | ✅ *(Dev 3)* |
 | Atlas collections and indexes, created from code | ✅ *(Dev 3)* |
 | Keyword, vector and native `$rankFusion` hybrid search | ✅ *(Dev 3)* |
 | Workspaces, patches, differential verifier | ✅ *(Dev 4)* |
-| Agent adapter, prompts, tools | ⬜ *(Dev 1)* — the one gap left in the demo path |
+| Agent adapter, prompts, tools | ✅ *(Dev 1)* — `propose_plan`, `run_unit_session`, `narrate_report`, all three against `gemini-4-argon` |
+| Chess (Python 2.7 → 3.14) planned and run | ⬜ — the gap between here and the demo, [#30](https://github.com/Prittstick22/axolotl/issues/30) |
 
-470 offline tests, 9 in a real sandbox container, and a live suite against the real
-Atlas cluster and Gemini behind `-m live`. CI runs the offline and container suites on
-every PR.
+676 offline backend tests, 9 in a real sandbox container, 56 live tests against the
+real Atlas cluster and Gemini behind `-m live`, and 16 frontend tests. A plain
+`uv run pytest` excludes the live ones, because one live run costs about 48 Gemini
+embedding calls against a 1000-a-day free tier. CI runs the offline, container and
+frontend suites on every pull request.
+
+On `legacy_orders`, the chain runs end to end today: import → graph in Atlas → plan →
+baseline in a container → an Argon patch → independent verification → a repair →
+gates → report. `run_bb0da2e79534` is one such run, where Argon's patches for
+`customers.py` and `pricing.py` both passed verification. **Chess cannot be migrated
+yet**, and chess is the demo — see the decision note above and [#30](https://github.com/Prittstick22/axolotl/issues/30).
 
 ## Branching
 
@@ -174,14 +183,168 @@ Merge at least every three hours.
   signature is otherwise unchanged. All 8 doc references updated.
 - **React 19, not React 18.** The current Vite template ships it. Ratified by Dev 5 on Fri 23 Oct.
 - **§6.2 vs `RunState`.** The Spec's state diagram and the contract enum disagree;
-  resolved in favour of the enum per §0. Needs a §11 ack.
+  resolved in favour of the enum per §0. **Acked** in SHARED_CONTRACTS §11.
+- **`search_repository` returns a dict**, not `list[SearchHit]`: the caller needs
+  `mode_used` and `native_hybrid` as well as the hits. §8's signature was corrected to
+  match §6 and the code. **Acked.**
+- **`folder_upload` origin** added for the chess upload screen. Additive, and it grants
+  no execution rights of its own. **Acked.**
+- **`fissix` dependency** (PSF licence) to read Python 2-only syntax: `lib2to3` is
+  deprecated, gone in Python 3.13, and absent from the Python 3.12 CI installs.
 
-All recorded in [BUILD_LOG.md](BUILD_LOG.md).
+All recorded in [BUILD_LOG.md](BUILD_LOG.md), with the §11 acks in
+[SHARED_CONTRACTS](docs/planning/SHARED_CONTRACTS.md#11-changing-a-contract).
 
 ---
 
-## To fill in before submission
+## Problem and user
 
-Problem and user · architecture · exact model ids and thinking levels · MongoDB Atlas
-features used · execution limits and sandbox policy · fixture provenance · coverage
-caveats · known issues and failures · credits.
+Legacy Python exists in large quantities and nobody wants to touch it. The reason is
+not that the changes are hard to write — a model writes them readily — it is that
+nobody can tell whether the rewrite still does what the original did. The code that
+needs migrating is usually the code with the thinnest tests, and a plausible-looking
+diff is exactly what a reviewer cannot check.
+
+Axolotl is for the engineer holding that codebase. It migrates module by module in
+dependency order and, for each module, **proves agreement on recorded behaviour**
+before moving on: the original and the migrated code run against the same cases in a
+sandbox and their outputs are compared. The agent proposes; it never decides whether
+it succeeded.
+
+"Behaviour preserved" means **agreement on the tested cases**. It is not a proof of
+equivalence, and every report says so in those words.
+
+## Architecture
+
+```
+            ┌────────── React 19 + Vite (8 screens) ──────────┐
+            │  Overview · Graph · Module · New migration       │
+            │  Plan · Run · Verification · Report              │
+            └───────────────────────┬─────────────────────────┘
+                                    │  26 REST endpoints, /api/v1
+            ┌───────────────────────▼─────────────────────────┐
+            │  FastAPI backend                                │
+            │                                                 │
+            │  ingestion ── analysis ── graph    (Dev 3)       │
+            │        │          AST, no imports                │
+            │        ▼                                         │
+            │  orchestration ── reports          (Dev 2)       │
+            │        │   scheduler, state machine,             │
+            │        │   event journal, run worker             │
+            │        ├────────────► agents       (Dev 1)       │
+            │        │              Gemini, tool loop          │
+            │        └────────────► verification (Dev 4)       │
+            │                       sandbox, differential       │
+            └───────────┬──────────────────────┬──────────────┘
+                        │                      │
+              MongoDB Atlas 8.0        Docker, --network none
+              13 collections,          one container per case run
+              Search + Vector
+```
+
+The single rule the design turns on: **only a persisted `VerificationResult` can mark
+a unit passed.** The agent's own report of success is advisory. A unit advances when
+its required gates pass, and no earlier.
+
+## Exact models and settings
+
+| | |
+|---|---|
+| planning and migration | `gemini-4-argon`, thinking level `medium` |
+| chunk descriptions | `gemini-4-argon` (`GEMINI_MODEL`) |
+| embeddings | `gemini-embedding-001`, 768 dimensions, cosine |
+| embedding task types | `RETRIEVAL_DOCUMENT` for chunks, `RETRIEVAL_QUERY` for queries |
+
+`gemini-4-argon` had no quota when we started on 23 Oct and returned
+`429 RESOURCE_EXHAUSTED`; `gemini-3.8-flash` was the fallback, and the model that ran
+is in `GEMINI_MODEL`. Argon quota arrived on 24 Oct and the live runs below used it.
+
+## MongoDB Atlas features used
+
+Covered in full under ["MongoDB Atlas: the system of record"](#mongodb-atlas-the-system-of-record)
+above, rather than repeated here: 13 collections with every index created from code,
+Atlas Search with a custom identifier analyser, Vector Search at 768 dimensions
+filtered by repository, native `$rankFusion` hybrid search whose `native_hybrid` flag
+is measured per request, and a gap-free event journal from an atomic `$inc` behind a
+unique `(run_id, sequence)` index.
+
+Claim-by-claim evidence is in [docs/mongodb-bounty.md](docs/mongodb-bounty.md).
+
+## Execution limits and sandbox policy
+
+Every case run happens in a fresh container, with these flags and no exceptions
+(`app/sandbox/runner.py`):
+
+```
+--network none          --user 65534:65534      --read-only
+--memory 256m           --cpus 1                --pids-limit 64
+--security-opt no-new-privileges                --cap-drop ALL
+--tmpfs /tmp:size=16m   --rm
+```
+
+60-second default timeout per run. A timeout, a kill or oversized output fails the
+`sandbox_policy` gate rather than being discarded.
+
+Beyond the container: **executable migration is only ever enabled for allowlisted
+trusted fixtures.** An upload qualifies only by being an exact content match for a
+tree in this repository (`app/ingestion/trust.py`); one changed byte, one extra file,
+one moved file and it stays static-analysis only. The analyser never imports or
+executes the code it reads — it parses with `ast`, and Python 2-only syntax is
+rewritten in memory for parsing only, never on disk.
+
+Dev 4's fuller treatment is [`docs/safety-and-limitations.md`](docs/safety-and-limitations.md) ([#9](https://github.com/Prittstick22/axolotl/issues/9)), still to be written.
+
+## Fixture provenance
+
+- **chess** — Will's own terminal chess game, Python 2.7, used with permission. Per
+  file hashes are in [`docs/chess-source-manifest.json`](docs/chess-source-manifest.json).
+  **Those hashes were taken on a checkout with CRLF line endings**, so 13 of the 16 do
+  not match the same source here; the manifest is provenance, not a checksum, and the
+  trust gate normalises line endings for exactly that reason.
+  Attribution and permission to publish still to be confirmed with Will before the
+  repository goes public ([#8](https://github.com/Prittstick22/axolotl/issues/8)).
+- **legacy_orders** — written for this project. A small order service whose pricing
+  rule rounds per line before tax, which is the behaviour a naive rewrite breaks:
+  77 of 300 single-line inputs diverge, and the fixture's own 12 tests all pass on a
+  banker's-rounding rewrite. Only the held-out differential catches it (2.65 → 2.64).
+
+## Coverage caveats
+
+- Agreement on recorded cases is not equivalence. Untested behaviour can change
+  undetected, and the report says so.
+- Held-out cases are the independent half of the suite. They are never shown to the
+  model unless a repair exposes one deliberately, and never leak through a read path:
+  comparisons, counterexamples and gate logs are all redacted for a sealed case.
+- An inconclusive gate is never a pass. If the sandbox cannot run, the result is
+  inconclusive, not success.
+- `legacy_orders` has 26 behaviour cases. **Chess has none yet** ([#23](https://github.com/Prittstick22/axolotl/issues/23)), so chess cannot be verified
+  today, only imported and inspected.
+
+## Known issues and failures
+
+| | |
+|---|---|
+| **Chess cannot be migrated** | the sandbox has no 2.7 or 3.14 runtime ([#22](https://github.com/Prittstick22/axolotl/issues/22)), chess has no behaviour cases ([#23](https://github.com/Prittstick22/axolotl/issues/23)), and `python2_to_3` is `supported: false` until both land ([#21](https://github.com/Prittstick22/axolotl/issues/21)) |
+| A 429 mid-run still loses a unit | the failure is now reported honestly, but the retry window is outstanding ([#47](https://github.com/Prittstick22/axolotl/issues/47)) |
+| Free-tier Gemini quota | 1000 embedding calls a day; one live test run is about 48, and a debugging session spent a whole key on 23 Oct |
+| Snapshots are machine-local | a repository imported on one laptop cannot be re-indexed on another; the endpoint says so with 409 `SNAPSHOT_UNAVAILABLE` |
+| Report runtime timings | `performance` is always `null`; nothing times cases yet ([#46](https://github.com/Prittstick22/axolotl/issues/46)) |
+| A run turns terminal before its last event | clients that stop polling at a terminal state can miss `report_generated` ([#16](https://github.com/Prittstick22/axolotl/issues/16)) |
+
+## Credits
+
+- **Will** — the chess source, used with permission.
+- **Gemini** (`gemini-4-argon`, `gemini-embedding-001`) — planning, migration, chunk
+  descriptions, embeddings.
+- **MongoDB Atlas** — system of record, Atlas Search, Vector Search, `$rankFusion`.
+- **fissix** (PSF licence) — the maintained standalone copy of `lib2to3`, used to read
+  Python 2-only syntax. `lib2to3` is deprecated, gone in Python 3.13, and absent from
+  the Python 3.12 that CI installs.
+- **FastAPI, Pydantic, PyMongo, NetworkX, React, Vite, Tailwind, pytest, ruff, uv.**
+
+## Screenshots
+
+To add before submission: Overview with the graph, the Plan screen with risk and
+visible-case counts, the Run screen mid-repair, the Verification screen's gate table
+and per-case comparison, and the Report with its NOT-A-PROOF statement.
+

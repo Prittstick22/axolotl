@@ -536,7 +536,8 @@ async def load_networkx(repo_id: str) -> nx.DiGraph           # local modules on
 async def get_module_detail(repo_id: str, module_id: str) -> ModuleDetail
 async def get_symbol(repo_id: str, symbol_id: str) -> tuple[SymbolRecord, str]   # (record, source slice)
 async def find_symbol(repo_id: str, qualified_name: str) -> SymbolRecord | None
-async def search_repository(repo_id: str, query: str, mode: SearchMode = "hybrid", limit: int = 8) -> list[SearchHit]
+async def search_repository(repo_id: str, query: str, mode: SearchMode = "hybrid", limit: int = 8) -> dict
+#   -> {"mode_used": SearchMode, "native_hybrid": bool, "hits": list[SearchHit]}
 async def search_status() -> dict                              # index readiness
 ```
 
@@ -709,3 +710,28 @@ than the field:
 
 `GET /repositories/{repo_id}/index` stays the authority for live progress: it is the
 endpoint to poll, and the only one that reports `reason` for a failure.
+
+### Additive: three changes already on `main`, acked (Dev 2, 24 Oct)
+
+Recorded because §11.2 says the doc and the code move together, and these moved
+ahead of the doc.
+
+**`folder_upload` as a `RepositoryRecord.origin`** (Dev 3/Dev 5, for the chess upload
+screen). Additive to the Literal, so it merges immediately. It carries no new
+execution rights: a folder upload is `executable=False` like a ZIP unless it matches a
+trusted tree exactly (`app/ingestion/trust.py`).
+
+**`search_repository` returns a dict, not `list[SearchHit]`.** §6 has said
+`{mode_used, native_hybrid, hits}` since the search layer landed; §8 above said
+`list[SearchHit]` until now, and the signature is corrected rather than the code,
+because the caller needs both of the extra fields: `mode_used` to say which engine
+answered when hybrid degrades, and `native_hybrid` to say whether `$rankFusion` ran or
+a Python fallback did. Dev 1's tool dispatcher already handles the dict (and keeps a
+list branch it can now drop, `app/agents/tools.py`).
+
+**§6.2's state diagram vs the `RunState` enum.** The Spec's diagram has `parsing`,
+`planning` and `awaiting_approval`, which the enum does not, and the enum has
+`cancelled`, which the diagram does not. Resolved in favour of the enum, per §0:
+contracts win on names and shapes. `skipped` is reachable from every in-flight unit
+state and carries both meanings - never attempted (T-13) and abandoned on
+cancellation - which the diagram does not distinguish either.

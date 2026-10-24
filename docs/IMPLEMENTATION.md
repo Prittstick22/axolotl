@@ -176,7 +176,13 @@ icons and IBM Plex, following the template in [`design/`](design/).
   their results, IDs are replaced by file paths, and Argon's rationale and reasons sit
   next to what the verifier found. It polls every 1.5 s until the run's closing event
   arrives. A run can be cancelled from the header.
-- The Diff, Report and Search screens are not built yet.
+- **07 Verification / Diff**: the gate table, attempt history and the per-case old and
+  new outputs for one unit, with sealed held-out cases shown as mismatched but not
+  valued. Routed at `run/:unitId`.
+- **08 Final report**: the verdict, what was migrated, the counterexamples and the
+  NOT-A-PROOF statement.
+- The Search screen is the one still outstanding: the nav links `/search`, the route
+  renders a `Pending` placeholder, and the API behind it is live and tested.
 
 ## 5. Demo inputs
 
@@ -209,8 +215,10 @@ icons and IBM Plex, following the template in [`design/`](design/).
 - **Agent patches through the verifier**: in run `run_bb0da2e79534` on Atlas Local, Argon's
   patches for `customers.py` and `pricing.py` passed verification. The run ended
   `completed_with_warnings` at 2 of 6 units (see Known gaps).
-- **Tests**: 544 offline backend tests, 9 in a real sandbox container, live Atlas and
-  Gemini suites behind `-m live`, and 13 frontend vitest tests. CI
+- **Tests**: 676 offline backend tests, 9 in a real sandbox container, 56 live Atlas
+  and Gemini tests behind `-m live`, and 16 frontend vitest tests. A plain
+  `uv run pytest` excludes the live ones (`addopts`), because one live run costs about
+  48 Gemini embedding calls against a 1000-a-day free tier. CI
   (`.github/workflows/ci.yml`) runs lint, offline tests, the container suite and the
   frontend build on every pull request.
 

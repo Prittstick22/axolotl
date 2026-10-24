@@ -27,6 +27,7 @@ parses one shape.
 | `UNSUPPORTED_TARGET` | 422 | Target unknown, or known with `supported=false` (**T-08**). |
 | `REPOSITORY_NOT_EXECUTABLE` | 409 | Plan requested for a ZIP upload; those are static-analysis only. |
 | `INTEGRATION_UNAVAILABLE` | 503 | A collaborator's function isn't implemented yet. Names the owner in `details`. |
+| `MODEL_UNAVAILABLE` | 503 | Argon was called and failed: a spent quota, a rate limit that outlasted the wait, a dropped connection. The message says which (#47). |
 | `PLAN_NOT_FOUND` / `RUN_NOT_FOUND` / `ARTEFACT_NOT_FOUND` / `UNIT_NOT_FOUND` | 404 | Unknown id. |
 | `PLAN_NOT_APPROVED` | 409 | Starting a run from a plan that is still `draft`. |
 | `PLAN_ALREADY_DECIDED` | 409 | Approving or rejecting a plan twice. |

@@ -176,3 +176,29 @@ async def test_the_plan_is_persisted_once_scored(world):
     assert saved.plan_id == plan.plan_id
     # The stored plan carries the corrected risk, not the provisional one.
     assert "no_visible_cases" not in unit(saved, "unit_pricing").risk_factors
+
+
+async def test_a_model_failure_is_a_503_with_its_reason_not_a_500(world, monkeypatch):
+    """#47: a spent quota used to escape as a bare 500, or would have read as NO_AGENT."""
+    from app.agents.gemini_client import ModelUnavailable
+    from app.errors import MODEL_UNAVAILABLE, AppError
+    from app.models.contracts import GraphPayload
+
+    async def graph(repo_id):
+        return GraphPayload(repository_id=repo_id, snapshot_hash="sha256:abc", nodes=[], edges=[])
+
+    async def quota_spent(context):
+        raise ModelUnavailable("Gemini quota exhausted for gemini-4-argon: the API asks "
+                               "to wait 17h 56m before retrying")
+
+    monkeypatch.setattr(ports_module, "get_graph", graph)
+    monkeypatch.setattr(ports_module, "propose_plan", quota_spent)
+
+    with pytest.raises(AppError) as raised:
+        await plans_module.create_plan(REPO, "modern_python3")
+
+    assert raised.value.code == MODEL_UNAVAILABLE
+    assert raised.value.status_code == 503
+    assert "17h 56m" in raised.value.message
+    assert world["saved"] == []
+

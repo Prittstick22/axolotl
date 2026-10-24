@@ -1794,3 +1794,29 @@ which also needs the target (#21) and chess cases (#23).
 
 714 offline backend tests (15 new), 22 container tests (13 new), ruff clean. No frontend
 changes.
+
+---
+
+## Dev 1: Gemini rate limits are waited out, not lost (#47)
+
+Two live runs each lost a unit to a failed Argon call: a 429 (`run_60c18c27a651`) and a
+dropped connection (`run_e5380c4d180c`). Dev 2's half (#49) made those endings honest in
+the journal; this half stops them happening.
+
+- **Two retry layers became one.** The `google-genai` SDK retried a 429 three times on its
+  own, reading only a `Retry-After` header, never the body's `retryDelay`. Our loop then
+  added 1, 2 and 4 s. On a daily quota the SDK's sleeps outlasted our 120 s timeout, so the
+  real error was replaced by a `TimeoutError`; that was the 500 on creating a plan on 24 Oct.
+  The SDK's retries are now off (`HttpOptions` can't do it: it raises `attempts=0` to one
+  retry, so `retry_config` is cleared on the interactions client), and checked against the
+  real SDK on a mock transport: 2 requests where it used to send 8.
+- **A 429 waits for what it asks for.** The body's `RetryInfo.retryDelay`, else `Retry-After`,
+  plus a second; with neither, 2, 4, 8, 16, 32 s. Up to 90 s in all, which covers a
+  per-minute quota.
+- **A daily quota fails at once and says how long:** "the API asks to wait 17h 56m".
+- **A dropped connection is retried once.** A timeout is not.
+- **Creating a plan** when the model fails answers `503 MODEL_UNAVAILABLE` with that reason,
+  instead of a bare 500 or the `NO_AGENT` fallback, which would wrongly say the agent is not
+  wired up.
+
+732 offline backend tests (8 new), 22 container tests, ruff clean. No live Gemini calls.

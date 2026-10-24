@@ -1758,3 +1758,39 @@ downloaded patch passes the existing revision/hash check.
 Validation: all 57 workspace, report and artefact tests passed; changed-file ruff
 and `git diff --check` passed. No Docker or external service is needed for these
 filesystem/report checks. The existing production fix required no further change.
+
+---
+
+## Dev 1: one sandbox image per interpreter (#22)
+
+The chess demo migrates Python 2.7 to 3.14, but the sandbox only had Python 3.12. Now
+`python2_to_3` records the baseline on Python 2.7 and runs every candidate gate on Python
+3.14; `modern_python3` keeps both sides on the original 3.12 image, unchanged.
+
+- **Images.** `runner/Dockerfile` takes `PYTHON_VERSION` and `PYTEST_VERSION` build args and
+  builds `axolotl-runner:latest` (3.12, the default, byte-for-byte the old build),
+  `axolotl-runner:py2.7` (pytest 4.6.11, the last for 2.7) and `axolotl-runner:py3.14`
+  (pytest 8.4.2). Same security profile on all three. CI builds all three.
+- **Which runs where.** `app/sandbox/runtimes.py` maps a target to a baseline and a candidate
+  runtime; verification reads the run's plan to pick them. An unknown target raises instead
+  of quietly verifying on 3.12, and a missing 2.7 or 3.14 image makes the gates
+  `inconclusive` with the exact build command, never a fallback.
+- **Python 2 harness.** `run_cases.py` now runs unchanged on 2.7 and 3: text, `long`,
+  old-style classes, `fromisoformat` and an encoding declaration were the differences.
+  On chess, the same five cases (a tuple, `None`, text, an object built on its legacy enum,
+  and a `TypeError`) encode to byte-identical output on 2.7.18, 3.14.9 and 3.12.15.
+- **Compile gate on 2.7.** `compileall` writes each `.pyc` next to its source on 2.7 (no
+  `PYTHONPYCACHEPREFIX`) and failed on the read-only `/code`. `harness/compile_tree.py`
+  compiles in memory instead, without leaking its own `print_function` into the code
+  under test, so a Python 2 `print` statement passes on 2.7 and fails on 3.14.
+- **Recorded, not assumed.** `BaselineSummary.environment["python"]` was the constant
+  `"3.12"`. Baselines and verifications now record the interpreter version probed from
+  inside the container, plus the image tag and digest. `VerificationResult.environment`
+  is new, additive and optional (SHARED_CONTRACTS §11); `contracts.ts` needs the mirror
+  (Dev 5).
+
+Chess's own 8 tests pass on 2.7 and 3.14. Not yet proven: a whole `python2_to_3` run,
+which also needs the target (#21) and chess cases (#23).
+
+714 offline backend tests (15 new), 22 container tests (13 new), ruff clean. No frontend
+changes.

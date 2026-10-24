@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     # --- Sandbox runner (Dev 4) ---
     runner_mode: RunnerMode = "trusted_docker"
     runner_image: str = "axolotl-runner:latest"
+    # Additive under SHARED_CONTRACTS §11 (#22): one image per interpreter, built from
+    # the same Dockerfile. `python2_to_3` baselines on 2.7 and verifies on 3.14.
+    runner_image_py27: str = "axolotl-runner:py2.7"
+    runner_image_py314: str = "axolotl-runner:py3.14"
     allow_arbitrary_code_execution: bool = False
     workspace_root: str = "./.axolotl_workspaces"
 

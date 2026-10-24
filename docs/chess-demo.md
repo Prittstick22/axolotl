@@ -76,7 +76,10 @@ own reproducible interpreters.
 1. **Baseline:** use the refreshed Python 2.7-compatible directory, not the stale
    ZIP. Preserve it unchanged in snapshots and keep candidate workspaces separate.
    The upstream README's relative ZIP/workspace references describe its source folder.
-2. **Interpreter-specific runner (Dev 4):** the current image uses Python 3.12 and
+2. **Interpreter-specific runner:** done in #22. `python2_to_3` baselines on the
+   `axolotl-runner:py2.7` image and verifies candidates on `axolotl-runner:py3.14`,
+   and each verdict records the probed interpreter and image digest. The rest of this
+   item is the original note. The current image uses Python 3.12 and
    verification records that runtime. Baseline execution needs Python 2.7, candidates
    need Python 3.14, and harness/test tooling must be compatible with each interpreter.
    Report the actual runtime/image digest. Do not simply relabel the current image.

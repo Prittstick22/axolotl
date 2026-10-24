@@ -34,9 +34,12 @@ from app.search.indexes import (
 
 log = logging.getLogger(__name__)
 
-__all__ = ["persist_chunks", "search_repository", "search_status"]
+__all__ = ["persist_chunks", "search_repository", "search_status", "store_enrichment"]
 
 SEARCH_INDEX_NOT_READY = "SEARCH_INDEX_NOT_READY"
+# A second index of a repository already being indexed would spend the Gemini quota
+# twice for the same chunks (#11).
+INDEXING_IN_PROGRESS = "INDEXING_IN_PROGRESS"
 RRF_K = 60   # standard reciprocal-rank-fusion constant
 PHRASE_BOOST = 8
 
@@ -57,6 +60,30 @@ async def persist_chunks(repo_id: str, chunks: list[dict[str, Any]]) -> int:
     if chunks:
         await database[CHUNKS_COLLECTION].insert_many(chunks)
     return len(chunks)
+
+
+async def store_enrichment(repo_id: str, chunks: list[dict[str, Any]]) -> int:
+    """Add descriptions and embeddings to chunks that are already stored.
+
+    An update in place, not `persist_chunks`: that deletes before it inserts, and
+    keyword search must keep finding these chunks while they are being enriched.
+    """
+    from pymongo import UpdateOne
+
+    from app.persistence import db
+
+    if not chunks:
+        return 0
+    database = await db.get_db()
+    result = await database[CHUNKS_COLLECTION].bulk_write([
+        UpdateOne(
+            {"repository_id": repo_id, "chunk_id": c["chunk_id"]},
+            {"$set": {"description": c.get("description"),
+                      "embedding": c.get("embedding")}},
+        )
+        for c in chunks
+    ], ordered=False)
+    return result.modified_count
 
 
 async def count_chunks(repo_id: str) -> int:
@@ -162,6 +189,10 @@ async def search_repository(
         hits = await _keyword(collection, repo_id, query, limit)
         return {"mode_used": "keyword", "native_hybrid": False, "hits": hits}
 
+    # Keyword search works from the moment the chunks are stored. Vector and hybrid
+    # need this repository's embeddings, which may still be on their way (#28).
+    await _require_repository_indexed(repo_id)
+
     if mode == "vector":
         _require(status["vector"], "vector")
         hits = await _vector(collection, repo_id, query, limit)
@@ -184,6 +215,41 @@ def _require(state: str, which: str) -> None:
         SEARCH_INDEX_NOT_READY,
         f"The {which} index does not exist yet.",
         status_code=503, details={"index": which, "state": state},
+    )
+
+
+async def _require_repository_indexed(repo_id: str) -> None:
+    """503 while this repository's embeddings are missing, never an empty result.
+
+    No status document means the repository was never indexed in the background (it
+    predates #28, or `INDEX_ON_IMPORT` was off), and search behaves as it always did.
+    """
+    from app.search import progress
+
+    status = await progress.get(repo_id)
+    if status is None or status["state"] == progress.READY:
+        return
+
+    details = {
+        "repository_id": repo_id, "state": status["state"],
+        "embedded": status.get("embedded", 0), "total": status.get("total"),
+    }
+    if status["state"] == progress.INDEXING:
+        total = status.get("total")
+        of_total = f" of {total}" if total is not None else ""
+        raise AppError(
+            SEARCH_INDEX_NOT_READY,
+            f"This repository is still being indexed: {details['embedded']}{of_total} "
+            "chunk(s) embedded. Keyword search works now; vector and hybrid search "
+            "will once indexing finishes.",
+            status_code=503, details=details,
+        )
+    raise AppError(
+        SEARCH_INDEX_NOT_READY,
+        f"Indexing this repository failed ({status.get('reason')}), so vector and "
+        "hybrid search are unavailable for it. Keyword search still works; "
+        "POST /repositories/{id}/index runs the indexing again.",
+        status_code=503, details={**details, "reason": status.get("reason")},
     )
 
 

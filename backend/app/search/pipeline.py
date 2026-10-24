@@ -10,8 +10,11 @@ independently:
   3. embeddings               one call per chunk. A chunk with no embedding simply
                               does not take part in vector search.
 
-Stage 1 runs on every import. Stages 2 and 3 are skipped when `INDEX_ON_IMPORT` is
-off, and can be run later against a stored snapshot via `reindex_repository`.
+Stage 1 runs on every import, before the import responds. Stages 2 and 3 take about
+two Gemini calls per chunk - minutes for chess's 122 chunks - so an import runs them
+in the background (#28), in batches, with progress in `search_index_status` (see
+`progress.py`). They are skipped when `INDEX_ON_IMPORT` is off, and can be run later
+against a stored snapshot via `reindex_repository`.
 
 Nothing here invents a description or a zero vector to fill a gap: a wrong
 description makes search confidently misleading, and a zero vector sits at a fixed
@@ -36,6 +39,14 @@ log = logging.getLogger(__name__)
 SEARCHABLE_TIMEOUT_SECONDS = 45.0
 SEARCHABLE_POLL_SECONDS = 1.5
 
+# Background enrichment works through the chunks in batches, storing each one, so
+# progress is real and a failure part-way keeps what was already done.
+ENRICH_BATCH_SIZE = 20
+
+# The running background tasks. asyncio keeps only weak references to tasks, so one
+# held nowhere else can be garbage-collected mid-run.
+_background: set[asyncio.Task[None]] = set()
+
 
 async def index_repository(
     repository_id: str,
@@ -43,8 +54,13 @@ async def index_repository(
     sources_by_module: dict[str, str],
     *,
     enrich: bool = True,
+    in_background: bool = False,
 ) -> dict[str, Any]:
-    """-> {chunks, described, embedded, warnings}. Never raises."""
+    """-> {chunks, described, embedded, warnings}. Never raises.
+
+    `in_background` stores the chunks, then schedules their descriptions and
+    embeddings and returns at once (#28); `enrich` is then ignored.
+    """
     from app.persistence import graphstore
     from app.search import persist_chunks
 
@@ -56,7 +72,9 @@ async def index_repository(
         return {"chunks": 0, "described": 0, "embedded": 0,
                 "warnings": ["no indexable symbols, so nothing was chunked"]}
 
-    if enrich:
+    if in_background:
+        enrich = False     # scheduled below, once the chunks are stored
+    elif enrich:
         warnings.extend(await _describe(chunks))
         warnings.extend(await _embed(chunks))
     else:
@@ -95,6 +113,9 @@ async def index_repository(
             "return nothing"
         )
 
+    if in_background:
+        warnings.extend(await schedule_enrichment(repository_id, chunks))
+
     described = sum(1 for c in chunks if c.get("description"))
     embedded = sum(1 for c in chunks if c.get("embedding"))
     log.info(
@@ -103,6 +124,159 @@ async def index_repository(
     )
     return {"chunks": len(chunks), "described": described,
             "embedded": embedded, "warnings": warnings}
+
+
+# --------------------------------------------------------------------------
+# background enrichment (#28)
+# --------------------------------------------------------------------------
+
+async def schedule_enrichment(
+    repository_id: str, chunks: list[dict[str, Any]]
+) -> list[str]:
+    """Record `indexing` and start describing and embedding stored chunks.
+
+    The status is written before this returns, so a search made the moment the import
+    responds already gets the 503 with progress, not an empty result.
+    """
+    from app.search import progress
+
+    if not progress.claim(repository_id):
+        return ["this repository is already being indexed"]
+    try:
+        await progress.begin(repository_id, total=len(chunks))
+    except Exception as exc:  # noqa: BLE001 - keyword search still works
+        progress.release(repository_id)
+        log.warning("could not record indexing status for %s: %s", repository_id, exc)
+        return [f"descriptions and embeddings were not started: the indexing status "
+                f"could not be stored ({exc}); POST /repositories/{{id}}/index "
+                f"adds them"]
+
+    task = asyncio.create_task(
+        _enrich(repository_id, chunks), name=f"enrich-{repository_id}"
+    )
+    _background.add(task)
+    task.add_done_callback(_background.discard)
+    return []
+
+
+async def _enrich(repository_id: str, chunks: list[dict[str, Any]]) -> None:
+    """Describe and embed in batches. Always ends `ready` or `failed`."""
+    from app.search import progress, store_enrichment
+
+    warnings: list[str] = []
+    described = embedded = 0
+    describing = True
+    stopped: str | None = None
+
+    try:
+        for start in range(0, len(chunks), ENRICH_BATCH_SIZE):
+            batch = chunks[start:start + ENRICH_BATCH_SIZE]
+
+            if describing:
+                warnings.extend(await _describe(batch))
+                batch_described = sum(1 for c in batch if c.get("description"))
+                # No key, or the quota is gone: every later batch would fail the same
+                # way, and each failure is a request against the quota (#11).
+                if batch_described == 0:
+                    describing = False
+                described += batch_described
+
+            warnings.extend(await _embed(batch))
+            batch_embedded = sum(1 for c in batch if c.get("embedding"))
+            embedded += batch_embedded
+
+            await store_enrichment(repository_id, batch)
+            await progress.advance(repository_id, described=described,
+                                   embedded=embedded)
+
+            if batch_embedded == 0:
+                stopped = (f"embedding stopped after {embedded} of {len(chunks)} "
+                           f"chunk(s): {warnings[-1] if warnings else 'no vectors'}")
+                break
+
+        if embedded and not await wait_until_vector_searchable(repository_id):
+            warnings.append("the embeddings were stored but vector search had not "
+                            "caught up within the wait; results may lag briefly")
+
+        if embedded == 0:
+            await progress.finish(repository_id, progress.FAILED, described=described,
+                                  embedded=0, reason=stopped or "no chunk was embedded",
+                                  warnings=warnings)
+        else:
+            if stopped:
+                warnings.append(stopped)
+            await progress.finish(repository_id, progress.READY, described=described,
+                                  embedded=embedded, warnings=warnings)
+        log.info("background indexing of %s: %d described, %d embedded of %d",
+                 repository_id, described, embedded, len(chunks))
+    except asyncio.CancelledError:
+        # Server shutting down. Best effort: the database may already be closed, and
+        # if so the next reader on this host marks it failed instead.
+        await _finish_quietly(repository_id, described, embedded,
+                              "indexing was cancelled because the server stopped")
+        raise
+    except Exception as exc:  # noqa: BLE001 - recorded, never silent
+        log.warning("background indexing of %s failed: %s", repository_id, exc)
+        await _finish_quietly(repository_id, described, embedded,
+                              f"{type(exc).__name__}: {exc}")
+    finally:
+        progress.release(repository_id)
+
+
+async def _finish_quietly(
+    repository_id: str, described: int, embedded: int, reason: str
+) -> None:
+    from app.search import progress
+
+    try:
+        await progress.finish(repository_id, progress.FAILED, described=described,
+                              embedded=embedded, reason=reason)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("could not record failed indexing of %s: %s", repository_id, exc)
+
+
+async def wait_until_vector_searchable(
+    repository_id: str, *, timeout: float = SEARCHABLE_TIMEOUT_SECONDS
+) -> bool:
+    """Poll the vector index until this repository's embeddings appear in it.
+
+    The query vector is one of the repository's own stored embeddings, so this never
+    calls Gemini. False on timeout, or when the vector index is not ready at all.
+    """
+    from app.persistence import db
+    from app.search.indexes import CHUNKS_COLLECTION, VECTOR_INDEX, search_status
+
+    if (await search_status())["vector"] != "ok":
+        return False
+
+    database = await db.get_db()
+    collection = database[CHUNKS_COLLECTION]
+    sample = await collection.find_one(
+        {"repository_id": repository_id, "embedding": {"$type": "array"}},
+        {"_id": 0, "embedding": 1},
+    )
+    if sample is None:
+        return False
+
+    pipeline = [
+        {"$vectorSearch": {
+            "index": VECTOR_INDEX, "path": "embedding",
+            "queryVector": sample["embedding"],
+            "filter": {"repository_id": repository_id},
+            "numCandidates": 10, "limit": 1,
+        }},
+        {"$project": {"_id": 0, "chunk_id": 1}},
+    ]
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while loop.time() < deadline:
+        try:
+            if [row async for row in await collection.aggregate(pipeline)]:
+                return True
+        except Exception as exc:  # noqa: BLE001 - index may still be catching up
+            log.info("waiting for the vector index: %s", exc)
+        await asyncio.sleep(SEARCHABLE_POLL_SECONDS)
+    return False
 
 
 async def _describe(chunks: list[dict[str, Any]]) -> list[str]:
@@ -187,7 +361,55 @@ async def reindex_repository(
         except OSError as exc:
             log.warning("could not read %s: %s", path, exc)
 
-    return await index_repository(repository_id, symbols, sources, enrich=enrich)
+    if not enrich:
+        return await index_repository(repository_id, symbols, sources, enrich=False)
+    await _refuse_if_indexing(repository_id)
+    return await _tracked_reindex(repository_id, symbols, sources)
+
+
+async def _refuse_if_indexing(repository_id: str) -> None:
+    from app.search import INDEXING_IN_PROGRESS, progress
+
+    status = await progress.get(repository_id)
+    if (status and status["state"] == progress.INDEXING) or \
+            progress.is_active(repository_id):
+        raise AppError(
+            INDEXING_IN_PROGRESS,
+            "This repository is already being indexed. Indexing it again now would "
+            "spend the Gemini quota twice on the same chunks; wait for it to finish.",
+            status_code=409,
+            details={"repository_id": repository_id,
+                     "embedded": (status or {}).get("embedded"),
+                     "total": (status or {}).get("total")},
+        )
+
+
+async def _tracked_reindex(
+    repository_id: str, symbols: list[SymbolRecord], sources: dict[str, str]
+) -> dict[str, Any]:
+    """A synchronous re-index, recorded in the indexing status like a background one."""
+    from app.search import progress
+
+    if not progress.claim(repository_id):
+        await _refuse_if_indexing(repository_id)
+    try:
+        await progress.begin(repository_id, total=None)
+        result = await index_repository(repository_id, symbols, sources, enrich=True)
+        embedded = result["embedded"]
+        await progress.finish(
+            repository_id, progress.READY if embedded else progress.FAILED,
+            total=result["chunks"], described=result["described"], embedded=embedded,
+            reason=(None if embedded else
+                    "no chunk was embedded" if result["chunks"] else
+                    "no indexable symbols, so there was nothing to embed"),
+            warnings=result["warnings"],
+        )
+        return result
+    except BaseException as exc:
+        await _finish_quietly(repository_id, 0, 0, f"{type(exc).__name__}: {exc}")
+        raise
+    finally:
+        progress.release(repository_id)
 
 
 async def wait_until_searchable(

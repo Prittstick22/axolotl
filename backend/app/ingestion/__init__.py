@@ -210,16 +210,20 @@ async def _import_into(
         record.warnings.append(f"behaviour cases were not loaded: {exc}")
 
     # Chunking, descriptions and embeddings (Dev 3 brief §3). Chunks are built and
-    # persisted whatever happens, so keyword search works with no API key at all;
-    # descriptions and embeddings are what `INDEX_ON_IMPORT` gates.
+    # persisted before the import responds, so keyword search works at once and with
+    # no API key at all. Descriptions and embeddings, which `INDEX_ON_IMPORT` gates,
+    # are two Gemini calls per chunk - minutes for chess - so they run in the
+    # background (#28); GET /repositories/{id}/index shows their progress.
     try:
         from app.search.pipeline import index_repository
 
+        enrich = get_settings().index_on_import
         indexed = await index_repository(
             repository_id,
             symbols=[s for a in analyses.values() for s in a.symbols],
             sources_by_module={m: a.source for m, a in analyses.items()},
-            enrich=get_settings().index_on_import,
+            enrich=enrich,
+            in_background=enrich,
         )
         record.warnings.extend(indexed["warnings"])
         log.info(

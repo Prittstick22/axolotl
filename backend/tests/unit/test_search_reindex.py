@@ -75,6 +75,21 @@ def repository(monkeypatch, tmp_path):
     import app.ingestion as ingestion
 
     monkeypatch.setattr(ingestion, "snapshot_path", lambda repo_id: state["root"])
+
+    # A re-index records its progress in `search_index_status` (#28).
+    from app.search import progress
+
+    statuses: dict[str, dict[str, Any]] = {}
+    state["statuses"] = statuses
+
+    async def write(repo_id: str, fields: dict[str, Any]) -> None:
+        statuses.setdefault(repo_id, {"repository_id": repo_id}).update(fields)
+
+    async def read(repo_id: str) -> dict[str, Any] | None:
+        return statuses.get(repo_id)
+
+    monkeypatch.setattr(progress, "_write", write)
+    monkeypatch.setattr(progress, "_read", read)
     return state
 
 

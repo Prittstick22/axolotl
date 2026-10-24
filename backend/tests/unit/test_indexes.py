@@ -23,6 +23,8 @@ EXPECTED = {
     ("edges", "edge_source", (("repository_id", 1), ("source", 1)), False),
     ("edges", "edge_target", (("repository_id", 1), ("target", 1)), False),
     ("code_chunks", "chunk_unique", (("repository_id", 1), ("chunk_id", 1)), True),
+    # Not in §9 yet: Dev 3's indexing progress (#28), proposed to Dev 2 as a §9 row.
+    ("search_index_status", "index_status_repository_unique", (("repository_id", 1),), True),
     ("migration_plans", "plan_id_unique", (("plan_id", 1),), True),
     ("migration_plans", "plan_repository", (("repository_id", 1),), False),
     ("migration_runs", "run_id_unique", (("run_id", 1),), True),
@@ -57,13 +59,14 @@ CREATED_ELSEWHERE = {
 }
 
 
-def test_all_twelve_collections_from_section_9():
+def test_the_twelve_section_9_collections_plus_indexing_status():
     assert set(COLLECTIONS) == {
         "repositories", "symbols", "edges", "code_chunks", "migration_plans",
         "migration_runs", "run_events", "counters", "behaviour_cases",
         "verification_results", "counterexamples", "artefacts",
+        "search_index_status",
     }
-    assert len(COLLECTIONS) == 12
+    assert len(COLLECTIONS) == 13
 
 
 def test_index_specs_match_section_9_exactly():

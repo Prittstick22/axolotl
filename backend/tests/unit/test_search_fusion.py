@@ -105,9 +105,17 @@ def atlas(monkeypatch):
             raise EmbeddingUnavailable("no key")
         return [0.1] * 768
 
+    # No indexing status recorded: these repositories were never indexed in the
+    # background, so search behaves as before #28 (test_background_indexing.py
+    # covers the gate itself).
+    async def no_indexing_status(_repo_id: str):
+        return None
+
     from app.persistence import db
+    from app.search import progress
 
     monkeypatch.setattr(db, "get_db", get_db)
+    monkeypatch.setattr(progress, "get", no_indexing_status)
     monkeypatch.setattr(search, "search_status", search_status)
     monkeypatch.setattr(search, "supports_native_hybrid", supports_native_hybrid)
     monkeypatch.setattr(search, "embed_one", embed_one)

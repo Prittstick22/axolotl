@@ -39,6 +39,7 @@ keys under a second name.
 | `edges` | Dev 3 | `edge_source` | `repository_id, source` | |
 | | | `edge_target` | `repository_id, target` | |
 | `code_chunks` | Dev 3 | `chunk_unique` | `repository_id, chunk_id` | yes |
+| `search_index_status` | Dev 3 | `index_status_repository_unique` | `repository_id` | yes |
 | `migration_plans` | Dev 2 | `plan_id_unique` | `plan_id` | yes |
 | | | `plan_repository` | `repository_id` | |
 | `migration_runs` | Dev 2 | `run_id_unique` | `run_id` | yes |
@@ -56,6 +57,10 @@ keys under a second name.
 
 `counters` needs no index of its own: §9 lists `_id`, which MongoDB creates on every
 collection automatically.
+
+`search_index_status` is not in §9 yet: it holds each repository's background search
+indexing progress (#28, below). It is Dev 3-only and additive; the §9 row has been
+proposed to Dev 2.
 
 Two more collections exist on the cluster but are not in §9, so `ensure_indexes()`
 leaves them to their owners: `baseline_outcomes` (Dev 4, index `baseline_run_case`) and
@@ -286,16 +291,65 @@ curl -s localhost:8000/api/v1/system/status | python -m json.tool
 curl -s "localhost:8000/api/v1/repositories/$REPO/search?q=finalise_amount&mode=keyword"
 curl -s "localhost:8000/api/v1/repositories/$REPO/search?q=where+is+rounding+done&mode=hybrid"
 
+# background indexing progress: indexing | ready | failed, embedded of total
+curl -s "localhost:8000/api/v1/repositories/$REPO/index"
+
 # re-chunk, re-describe and re-embed from the stored snapshot
 curl -s -X POST "localhost:8000/api/v1/repositories/$REPO/index"
 ```
 
+### Import responds first, indexing follows (#28)
+
+Descriptions and embeddings are two Gemini calls per chunk, and the import used to wait
+for all of them: about 40 s for `legacy_orders` (40 chunks) and over 2 minutes for chess
+(122 chunks). Now the import stores the repository, graph and chunks, then responds;
+keyword search works at once. Descriptions and embeddings run in the background, in
+batches of 20, each batch written onto the stored chunks in place (never deleted and
+re-inserted, so keyword search keeps finding them).
+
+Timed on 24 Oct with Atlas in memory and Gemini replaced by a stub calibrated to the real
+latency (4.5 s per description, 0.4 s per embedding, five at a time):
+
+| Import | Responds, before | Responds, after | Indexing done, after |
+|---|---|---|---|
+| `legacy_orders`, 40 chunks | 39.3 s | 0.01 s | 39.3 s |
+| chess folder, 122 chunks | 122.7 s | 0.04 s | 122.7 s |
+
+Real Atlas adds its writes and the few seconds Atlas Search takes to see new chunks,
+before and after alike. The Gemini calls are the same in number; only when they happen
+changed.
+
+Progress lives in `search_index_status`, one document per repository:
+
+| `state` | Meaning | Vector and hybrid search |
+|---|---|---|
+| `indexing` | `embedded` of `total` chunks done so far | 503 `SEARCH_INDEX_NOT_READY`, with the progress |
+| `ready` | finished | normal |
+| `failed` | stopped; `reason` says why | 503 `SEARCH_INDEX_NOT_READY`, with the reason |
+| no document | imported before #28, or with `INDEX_ON_IMPORT` off | as before |
+
+Keyword search is never held up by indexing. `GET /repositories/{id}/index` returns the
+document. `POST /repositories/{id}/index` re-runs indexing, and answers 409
+`INDEXING_IN_PROGRESS` while it is already running, so the quota is never spent twice
+on the same chunks.
+
+- **Restarts.** Indexing lives in the server process. Each document records the host and
+  process that own it; a reader on the same host that finds a different process (or
+  this one with nothing running) marks it `failed`, and `POST .../index` runs it again.
+  A document from another machine is left alone, since a teammate's import on the
+  shared cluster may be indexing right now, and only the importing machine has the
+  snapshot.
+- **A spent quota stops the job.** A batch with no descriptions stops the descriptions;
+  a batch with no embeddings stops the job. Without this, every remaining chunk would
+  still send its own failing requests.
+
 `POST /repositories/{repo_id}/index` is for when `INDEX_ON_IMPORT` was off, when a
-Gemini key arrives after an import, or when the embedding model or dimension count
+Gemini key arrives after an import, when background indexing failed, or when the embedding model or dimension count
 changes. It reads sources from the immutable snapshot, so it describes exactly the
 code the symbols were extracted from.
 
-`INDEX_ON_IMPORT=false` skips descriptions and embeddings at import. Chunks are still
+`INDEX_ON_IMPORT=false` skips descriptions and embeddings at import, background ones
+included. Chunks are still
 built and stored, so keyword search works immediately — with no API key at all. The
 test suite sets it off: enrichment is two model calls per chunk, and the import tests
 import the fixture eleven times.

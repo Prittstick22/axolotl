@@ -1,7 +1,8 @@
 """Collections and regular indexes - owner: Dev 3. SHARED_CONTRACTS §9.
 
 `ensure_indexes()` runs at startup and makes the `axolotl` database match §9: all 12
-collections exist, and every regular index in §9 exists, with an explicit name.
+collections exist, plus Dev 3's `search_index_status` (#28, pending a §9 row), and
+every regular index in §9 exists, with an explicit name.
 
 Rules it follows:
   - **Add only.** It never drops, renames or rebuilds an index. If an index already
@@ -45,6 +46,9 @@ BEHAVIOUR_CASES = "behaviour_cases"
 VERIFICATION_RESULTS = "verification_results"
 COUNTEREXAMPLES = "counterexamples"
 ARTEFACTS = "artefacts"
+# Not in §9 yet: per-repository search indexing progress (#28, app/search/progress.py).
+# Additive and Dev 3-only; the §9 row is proposed to Dev 2.
+SEARCH_INDEX_STATUS = "search_index_status"
 
 COLLECTIONS: tuple[str, ...] = (
     REPOSITORIES,
@@ -59,6 +63,7 @@ COLLECTIONS: tuple[str, ...] = (
     VERIFICATION_RESULTS,
     COUNTEREXAMPLES,
     ARTEFACTS,
+    SEARCH_INDEX_STATUS,
 )
 
 # MongoDB error codes for "an index with these keys or this name already exists
@@ -92,6 +97,8 @@ INDEX_SPECS: tuple[IndexSpec, ...] = (
     IndexSpec(EDGES, "edge_source", (("repository_id", 1), ("source", 1))),
     IndexSpec(EDGES, "edge_target", (("repository_id", 1), ("target", 1))),
     IndexSpec(CODE_CHUNKS, "chunk_unique", (("repository_id", 1), ("chunk_id", 1)), unique=True),
+    IndexSpec(SEARCH_INDEX_STATUS, "index_status_repository_unique",
+              (("repository_id", 1),), unique=True),
     # Dev 2
     IndexSpec(MIGRATION_PLANS, "plan_id_unique", (("plan_id", 1),), unique=True),
     IndexSpec(MIGRATION_PLANS, "plan_repository", (("repository_id", 1),)),

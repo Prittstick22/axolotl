@@ -542,9 +542,10 @@ async def _final_verification(
         )
         return None
 
+    held_out = {c.case_id for c in result.comparisons if c.visibility == "held_out"}
     for gate in result.gates:
         await events.append_event(
-            run.run_id, "gate_result", payload=gate.model_dump()
+            run.run_id, "gate_result", payload=events.gate_payload(gate, held_out)
         )
 
     # Final-verification counterexamples were never journalled, so the report

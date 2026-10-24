@@ -103,6 +103,32 @@ def sanitise(
     return truncate(redact(payload or {}, secrets))
 
 
+# These gates' log is the harness's raw output: one JSON outcome per case, held-out
+# cases included. The unit endpoint (`api/plans_runs.py`) and the journal both
+# withhold it, from this one list (#94).
+HARNESS_GATES = {"differential", "impacted_tests"}
+WITHHELD_LOG = "case outputs withheld: they include held-out cases. See comparisons."
+
+
+def gate_payload(gate: Any, held_out_case_ids: set[str]) -> dict[str, Any]:
+    """A `gate_result` payload without held-out case outputs (#94).
+
+    `GET /runs/{id}/events` serves the journal as stored, and the report narrative
+    hands its tail to Argon, so the log is withheld before it is written. The same
+    two layers as the unit endpoint: a harness gate's log always, and any other
+    gate's log that mentions a held-out case. Exposure is not known yet when a gate
+    is journalled, so every held-out case counts as sealed here.
+    """
+    payload = gate.model_dump()
+    log_text = payload.get("log_excerpt") or ""
+    if log_text and (
+        payload.get("gate") in HARNESS_GATES
+        or any(case_id in log_text for case_id in held_out_case_ids)
+    ):
+        payload["log_excerpt"] = WITHHELD_LOG
+    return payload
+
+
 async def next_sequence(run_id: str) -> int:
     """Atomically reserve the next sequence number for this run.
 

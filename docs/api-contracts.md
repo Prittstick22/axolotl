@@ -211,7 +211,7 @@ Written only through `events.append_event`. Payloads are redacted and capped at 
 | `patch_proposed` | `{files, summary, bytes}` |
 | `patch_applied` / `patch_rejected` | `{workspace_revision}` / `{errors}` |
 | `verification_started` | `{workspace_revision, scope}` |
-| `gate_result` | `GateResult` |
+| `gate_result` | `GateResult`. A harness gate's `log_excerpt`, or one that mentions a held-out case, is replaced with "case outputs withheld" (#94) |
 | `verification_passed` / `verification_failed` | `{verification_id, failed_case_ids, counterexample_ids}` |
 | `counterexample_recorded` | `{counterexample_id, case_id, visibility, ...}` |
 | `repair_started` | `{attempt, budget_remaining}` |

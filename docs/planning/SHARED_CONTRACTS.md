@@ -515,7 +515,8 @@ Written **only** through Dev 2's `append_event(run_id, event_type, unit_id=None,
 | `counterexample_recorded` | Dev 2 | `{counterexample_id, case_id, visibility, old_value, new_value}` (held-out values only if exposed) |
 | `repair_started` | Dev 2 | `{attempt, budget_remaining}` |
 | `snapshot_accepted` | Dev 2 | `{revision}` |
-| `unit_blocked` | Dev 2 | `{reason, verification_id}` |
+| `unit_blocked` | Dev 2 | `{reason, verification_id}` — a unit that **was tried** and could not be verified |
+| `unit_skipped` | Dev 2 | `{reason, verification_id}` — a unit that **will not be attempted**: a blocked prerequisite (T-13), a cancellation, or a restart. Additive (#27): one blocked unit used to journal four `unit_blocked` events, so the Run screen showed one failure as four red rows |
 | `report_generated` | Dev 2 | `{artefact_ids}` |
 | `error` | anyone via Dev 2 | `{code, message}` |
 
@@ -760,3 +761,27 @@ Two settings join §10, both with defaults: `RUNNER_IMAGE_PY27` and `RUNNER_IMAG
 
 **For Dev 5:** `frontend/src/types/contracts.ts` should gain
 `environment?: Record<string, string> | null` on `VerificationResult` to mirror this.
+
+### Additive: `unit_skipped`, and the attempt budget on `RunSummary` (Dev 5 asked, Dev 2 acked 24 Oct)
+
+Both additive, so they merge immediately under §11.3.
+
+**`unit_skipped`** separates "not attempted" from "tried and could not be verified".
+Every unit abandoned downstream of a block, by a cancellation or by a restart used to
+be journalled as `unit_blocked`, the same type as the block that caused it, so the Run
+screen rendered one real failure as four red rows. `unit_blocked` now means only the
+second thing. Clients that match on `unit_blocked` keep working and simply stop seeing
+the skips; a client that does not know `unit_skipped` yet shows nothing for them, which
+is better than showing them as failures.
+
+**`RunSummary.max_patch_attempts`** records the budget the run actually ran under, so
+the Run screen's header can say "Attempt 2 of 3". Read from config at run creation
+rather than at display time, so a finished run keeps its own budget if the setting
+changes later.
+
+**And a decision Dev 5 asked for: a cancelled run always gets a report.** It used to
+depend on when the user clicked - cancelling during final verification produced one,
+cancelling during baselining or unit migration did not. A cancelled run has usually
+verified some units; that work is real and the report is the record of it, verdict and
+NOT-A-PROOF statement included. The Report screen can rely on a report existing for any
+terminal run.

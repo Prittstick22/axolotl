@@ -401,6 +401,13 @@ export interface RunSummary {
   created_at: string;
   updated_at: string;
   error: string | null;
+  /**
+   * The patch-attempt budget this run ran under, for headers like "Attempt 2 of 3"
+   * (SHARED_CONTRACTS §11, #27). Recorded per run rather than read from config at
+   * display time, so a finished run keeps its own budget. Null for runs started
+   * before this field existed.
+   */
+  max_patch_attempts?: number | null;
 }
 
 export interface RunEvent {

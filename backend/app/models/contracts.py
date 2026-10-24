@@ -344,6 +344,11 @@ class RunSummary(BaseModel):
     created_at: datetime
     updated_at: datetime
     error: str | None = None
+    # Additive under §11 (#27). The Run screen's header says "Attempt 2 of 3" and had
+    # no source for the 3: `max_patch_attempts` lived only in config. Recorded per run
+    # rather than read from config at display time, so a finished run keeps the budget
+    # it actually ran under even if the setting changes afterwards.
+    max_patch_attempts: int | None = None
 
 
 class RunEvent(BaseModel):

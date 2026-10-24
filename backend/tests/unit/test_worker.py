@@ -433,15 +433,26 @@ async def test_a_run_with_a_blocked_unit_is_completed_with_warnings(world):
 
 
 async def test_a_blocked_unit_emits_a_reason(world):
+    """One block, one `unit_blocked`. Everything downstream is `unit_skipped` (#27).
+
+    All of them used to be `unit_blocked`, so one real block showed as four red rows
+    on the Run screen.
+    """
     world.verdicts = {"unit_pricing": [False, False, False]}
     await run_to_completion(world)
+
     blocked = [e for e in world.events if e["event_type"] == "unit_blocked"]
-    assert blocked
-    assert all(e["payload"].get("reason") for e in blocked)
-    skipped_reason = next(
-        e["payload"]["reason"] for e in blocked if e["unit_id"] == "unit_orders"
+    skipped = [e for e in world.events if e["event_type"] == "unit_skipped"]
+
+    assert [e["unit_id"] for e in blocked] == ["unit_pricing"], (
+        "only the unit that was tried and could not be verified is blocked"
     )
-    assert "unit_pricing" in skipped_reason
+    assert all(e["payload"].get("reason") for e in blocked + skipped)
+
+    downstream = [e["payload"]["reason"] for e in skipped
+                  if e["unit_id"] == "unit_orders"]
+    assert downstream, "the dependant was not journalled as skipped"
+    assert "unit_pricing" in downstream[0]
 
 
 # --------------------------------------------------------------------------
@@ -701,8 +712,12 @@ async def test_cancelling_journals_every_unit_it_abandons(world):
         f"{len(on_document)} unit(s) skipped on the document but "
         f"{len(journalled)} in the journal"
     )
-    reasons = [e for e in world.events if e["event_type"] == "unit_blocked"]
+    # Abandoned, not failed: `unit_skipped` (#27).
+    reasons = [e for e in world.events if e["event_type"] == "unit_skipped"]
     assert any("cancelled" in (e["payload"].get("reason") or "") for e in reasons)
+    assert not [e for e in world.events if e["event_type"] == "unit_blocked"], (
+        "a cancellation marked a unit as blocked, which reads as a failure"
+    )
 
 
 # --------------------------------------------------------------------------
@@ -767,18 +782,20 @@ async def test_an_agent_error_is_journalled_and_named_as_the_block_reason(
     assert any("429" in (e["payload"].get("message") or "") for e in errors)
     assert all(e["payload"].get("code") == "AGENT_SESSION_FAILED" for e in errors)
 
-    reasons = [e["payload"].get("reason") or ""
+    blocked = [e["payload"].get("reason") or ""
                for e in world.events if e["event_type"] == "unit_blocked"]
-    assert reasons, "nothing was blocked, so this test proves nothing"
+    skipped = [e["payload"].get("reason") or ""
+               for e in world.events if e["event_type"] == "unit_skipped"]
+    assert blocked, "nothing was blocked, so this test proves nothing"
 
     # The units whose own session failed name the real cause.
-    assert any("429" in r for r in reasons), f"the real cause is missing from {reasons}"
+    assert any("429" in r for r in blocked), f"the real cause is missing from {blocked}"
     # Nothing is described as a failed verification, because none was attempted.
-    assert not any("no verification passed" in r for r in reasons), (
+    assert not any("no verification passed" in r for r in blocked + skipped), (
         "a failed model call is still being reported as a failed verification"
     )
-    # Dependants are blocked for their own, different and accurate, reason.
-    assert any("dependency" in r for r in reasons)
+    # Dependants are *skipped*, for their own accurate reason (#27).
+    assert any("dependency" in r for r in skipped)
     assert run.units_verified == 0
 
 
@@ -964,7 +981,10 @@ async def test_an_interrupted_run_releases_its_units_and_journals_why(world):
     )
 
     kinds = kinds_of(world)
-    assert "unit_blocked" in kinds, "nothing in the journal explains the skips"
+    assert "unit_skipped" in kinds, "nothing in the journal explains the skips"
+    assert "unit_blocked" not in kinds, (
+        "a restart marked units as blocked, which reads as a verification failure"
+    )
     assert any(e["payload"].get("code") == "RUN_INTERRUPTED"
                for e in world.events if e["event_type"] == "error")
     assert kinds.index("error") < max(
@@ -1028,3 +1048,62 @@ async def test_a_new_run_is_allowed_once_the_first_has_finished(world):
     task = worker_module._tasks.get(second.run_id)
     if task is not None:
         await task
+
+
+# --------------------------------------------------------------------------
+# #27: what the Run screen asked for
+# --------------------------------------------------------------------------
+
+async def test_the_run_records_the_attempt_budget_it_ran_under(world):
+    """The header says "Attempt 2 of 3" and had no source for the 3."""
+    run = await run_to_completion(world)
+
+    from app.config import get_settings
+
+    assert run.max_patch_attempts == get_settings().max_patch_attempts
+    assert run.max_patch_attempts >= 1
+
+
+async def test_a_cancelled_run_gets_a_report_however_early_it_was_cancelled(
+    world, monkeypatch
+):
+    """It used to depend on when the user clicked: cancelling during final
+    verification produced a report, cancelling during baselining did not, and the
+    Report screen could not explain the difference to someone who did the same thing
+    both times.
+    """
+    reported: list[str] = []
+
+    async def generate_report(run):
+        reported.append(run.state)
+        await world.append_event(run.run_id, "report_generated",
+                                 payload={"artefact_ids": []})
+
+    monkeypatch.setattr(worker_module, "_generate_report", generate_report)
+    world.cancel_after_baseline = True
+
+    run = await run_to_completion(world)
+
+    assert run.state == "cancelled"
+    assert reported == ["cancelled"], (
+        f"a cancelled run produced {len(reported)} report(s), from state {reported}"
+    )
+    # The report is in the journal before the run reads terminal (#16).
+    kinds = kinds_of(world)
+    assert kinds.index("report_generated") < max(
+        i for i, k in enumerate(kinds) if k == "run_state_changed"
+    )
+
+
+async def test_a_cancelled_run_reports_only_once(world, monkeypatch):
+    """`_is_cancelled` is called from more than one place and is safe to repeat."""
+    count = {"n": 0}
+
+    async def generate_report(run):
+        count["n"] += 1
+
+    monkeypatch.setattr(worker_module, "_generate_report", generate_report)
+    world.cancel_during_final = True
+
+    await run_to_completion(world)
+    assert count["n"] == 1, f"the report was generated {count['n']} times"

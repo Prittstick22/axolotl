@@ -106,6 +106,7 @@ async def start_run(plan_id: str) -> RunSummary:
         last_event_sequence=0,
         model=settings.gemini_model,
         runner_mode=runner,
+        max_patch_attempts=settings.max_patch_attempts,
         created_at=store.utcnow(),
         updated_at=store.utcnow(),
     )
@@ -158,12 +159,8 @@ async def mark_interrupted_runs() -> list[str]:
             # Through _set_unit so each change is validated and lands in the journal:
             # writing straight onto the document would leave the audit trail (T-15)
             # claiming those units were still running.
-            await _set_unit(run, state.unit_id, "skipped")
-            await events.append_event(
-                run.run_id, "unit_blocked", unit_id=state.unit_id,
-                payload={"reason": "the backend restarted before this unit finished",
-                         "verification_id": None},
-            )
+            await _skip(run, state.unit_id,
+                        "the backend restarted before this unit finished")
 
         run.current_unit = None
         run.error = events.truncate(events.redact(store.INTERRUPTED))
@@ -302,7 +299,8 @@ async def _execute(run_id: str, plan: MigrationPlan) -> None:
         # the user had already stopped - the last path where a run could overstate
         # itself.
         if await _is_cancelled(run):
-            await _generate_report(run)
+            # `_is_cancelled` reports and transitions; it used to be the only
+            # cancellation path that produced a report, and now it is not special.
             return
 
         await _finish(run, final_verdict(_statuses(run), final_passed))
@@ -336,11 +334,7 @@ async def _migrate_units(
 
         # Anything downstream of a blocked unit is skipped, never migrated (T-13).
         for unit_id, reason in units_to_skip(plan.units, _statuses(run)).items():
-            await _set_unit(run, unit_id, "skipped")
-            await events.append_event(
-                run.run_id, "unit_blocked", unit_id=unit_id,
-                payload={"reason": reason, "verification_id": None},
-            )
+            await _skip(run, unit_id, reason)
 
         ready = eligible_units(plan.units, _statuses(run))
         if not ready:
@@ -617,6 +611,27 @@ async def _generate_report(run: RunSummary) -> None:
 # helpers
 # --------------------------------------------------------------------------
 
+async def _skip(run: RunSummary, unit_id: str, reason: str) -> None:
+    """A unit that will not be attempted. Not a failure (#27).
+
+    `unit_skipped`, not `unit_blocked`. One blocked unit used to show as four red rows
+    on the Run screen, because everything downstream of it was journalled with the
+    same event type as the block itself - as were the units abandoned by a
+    cancellation or a restart. Only `_block` below is a unit that was tried and could
+    not be verified.
+
+    The three reasons a unit is skipped - a blocked prerequisite (T-13), a
+    cancellation, a restart - all travel in `reason`, so the UI can show them in grey
+    without matching on its text.
+    """
+    await _set_unit(run, unit_id, "skipped")
+    await _save(run)
+    await events.append_event(
+        run.run_id, "unit_skipped", unit_id=unit_id,
+        payload={"reason": reason, "verification_id": None},
+    )
+
+
 async def _block(run: RunSummary, unit_id: str, reason: str) -> None:
     await _set_unit(run, unit_id, "blocked")
     run.units_blocked += 1
@@ -648,6 +663,14 @@ async def _is_cancelled(run: RunSummary) -> bool:
     `_execute` and `_migrate_units` both check this, so without the terminal guard
     the second call would attempt cancelled -> cancelled and raise inside the
     handler that is meant to be recording the cancellation.
+
+    **A cancelled run always gets a report** (#27). It used to depend on when the user
+    clicked: cancelling during final verification produced one, cancelling during
+    baselining or unit migration did not, and the Report screen had no way to explain
+    the difference to the person who had done the same thing both times. A cancelled
+    run has usually verified some units, that work is real, and the report is the
+    record of it - with its verdict and its NOT-A-PROOF statement intact. Generating
+    it here means every cancellation path gets one, in the right order, from one place.
     """
     if run.run_id not in _cancelled:
         return False
@@ -660,17 +683,21 @@ async def _is_cancelled(run: RunSummary) -> bool:
     # trail (T-15) claiming those units were still running.
     for state in list(run.units):
         if state.status not in TERMINAL_UNIT_STATUSES:
-            await _set_unit(run, state.unit_id, "skipped")
-            await events.append_event(
-                run.run_id, "unit_blocked", unit_id=state.unit_id,
-                payload={"reason": "run cancelled before this unit finished",
-                         "verification_id": None},
-            )
+            await _skip(run, state.unit_id,
+                        "run cancelled before this unit finished")
 
-    # The closing event before the terminal transition (#16), as in `_fail`.
+    # The verdict in memory first, so the report records the state it is the report
+    # of; then the report and the closing event, and only then the document - which is
+    # when a poller sees the run as terminal (#16, as in `_finish`).
+    previous = run.state
+    run.state = transition_run(run.run_id, run.state, "cancelled")
+    await _generate_report(run)
     await events.append_event(
         run.run_id, "error",
         payload={"code": "RUN_CANCELLED", "message": "cancelled by request"},
     )
-    await _transition(run, "cancelled")
+    await events.append_event(
+        run.run_id, "run_state_changed", payload={"from": previous, "to": "cancelled"}
+    )
+    await _save(run)
     return True

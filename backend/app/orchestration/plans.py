@@ -14,6 +14,7 @@ from app.api.targets import require_supported_target
 from app.config import get_settings
 from app.errors import (
     INTEGRATION_UNAVAILABLE,
+    MODEL_UNAVAILABLE,
     PLAN_ALREADY_DECIDED,
     REPOSITORY_NOT_EXECUTABLE,
     AppError,
@@ -135,10 +136,21 @@ async def _ask_argon(
         target=target,
         module_summaries=_module_summaries(graph_payload),
     )
+    from app.agents.gemini_client import ModelUnavailable
+
     try:
         return await ports.propose_plan(context), ""
     except ports.IntegrationUnavailable:
         return None, ""
+    except ModelUnavailable as exc:
+        # Not the NO_AGENT fallback: that says the agent is not wired up, which would
+        # be false here. The caller gets the model's reason, and can try again (#47).
+        raise AppError(
+            MODEL_UNAVAILABLE,
+            f"Argon could not propose a plan: {exc}",
+            status_code=503,
+            details={"model": get_settings().gemini_model},
+        ) from exc
 
 
 def _module_summaries(graph_payload) -> dict[str, str]:

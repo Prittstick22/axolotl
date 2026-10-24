@@ -477,3 +477,56 @@ def test_a_verification_with_no_gates_is_passed_through():
     assert _withhold_harness_logs(verification) == verification
     del verification["gates"]
     assert _withhold_harness_logs(verification) == verification
+
+
+async def test_the_endpoint_itself_lets_no_held_out_value_through(monkeypatch):
+    """Through `get_run_unit`, not through the two helpers it happens to call.
+
+    The previous test asserts the helpers redact. This asserts the *endpoint* does,
+    which is what ships: if it stopped calling one of them - or a third field were
+    added to the response - the helper-level test would still pass. That is the same
+    mistake as fixtures with `"gates": []`, one level up.
+    """
+    from app.api import plans_runs
+
+    verification = a_verification([
+        a_comparison("case_001", "visible", "1.25", "1.26"),
+        a_comparison("hcase_001", "held_out", HELD_OUT_VALUE, "2.64"),
+    ])
+    verification["gates"] = [
+        a_gate("compile"),
+        a_gate("differential", HARNESS_LOG),
+        a_gate("final_integration", HARNESS_LOG),
+    ]
+
+    async def get_run(run_id):
+        return _a_run("run_bb0da2e79534", "completed", "passed")
+
+    async def list_verifications(run_id, unit_id=None):
+        return [verification]
+
+    async def get_counterexamples(run_id, unit_id, *, for_model):
+        # The full record, as Dev 4 returns it for the human view.
+        return [{
+            "counterexample_id": "cex_001", "run_id": run_id, "unit_id": unit_id,
+            "attempt": 1, "case_id": "hcase_001", "visibility": "held_out",
+            "exposed_to_model": False, "function": "pricing.finalise_amount",
+            "args": [[{"unit_price": "2.45"}]], "kwargs": {},
+            "old": {"value": HELD_OUT_VALUE}, "new": {"value": "2.64"},
+        }]
+
+    monkeypatch.setattr(plans_runs.store, "get_run", get_run)
+    monkeypatch.setattr(plans_runs.ports, "list_verifications", list_verifications)
+    monkeypatch.setattr(plans_runs.ports, "get_counterexamples", get_counterexamples)
+
+    body = await plans_runs.get_run_unit("run_bb0da2e79534", "unit_pricing")
+
+    serialised = str(body)
+    assert HELD_OUT_VALUE not in serialised, "a held-out value reached the endpoint"
+    assert "2.45" not in serialised, "a held-out input reached the endpoint"
+    # Still useful: the reviewer sees that the sealed case mismatched, and the
+    # visible case in full.
+    assert any(c["case_id"] == "hcase_001" and c["verdict"] == "mismatch"
+               for c in body["verifications"][0]["comparisons"])
+    assert any(c["case_id"] == "case_001" and c["old"]["value"] == "1.25"
+               for c in body["verifications"][0]["comparisons"])

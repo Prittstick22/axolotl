@@ -12,6 +12,7 @@ from app.orchestration.scheduler import (
     eligible_units,
     impacted_units,
     is_valid_order,
+    rescore_risk,
     score_risk,
     topological_order,
     unit_id_for,
@@ -306,3 +307,99 @@ def test_an_order_missing_a_unit_is_rejected(fixture_units):
 def test_an_order_with_a_duplicate_is_rejected(fixture_units):
     order = topological_order(fixture_units)
     assert is_valid_order([*order[:-1], order[0]], fixture_units) is False
+
+
+# --------------------------------------------------------------------------
+# #3: risk is scored again once the visible case counts are known
+# --------------------------------------------------------------------------
+
+def test_a_unit_with_cases_loses_the_no_visible_cases_factor(fixture_units):
+    """The Plan screen showed `pricing.py` as "High" with `no_visible_cases` beside
+    "Visible cases 8"."""
+    units = by_id(fixture_units)
+    pricing = units["unit_pricing"]
+
+    # As built: the counts do not exist yet, so every unit looks untested.
+    assert "no_visible_cases" in pricing.risk_factors
+    before = pricing.risk
+
+    for unit in fixture_units:
+        unit.visible_case_count = 8
+    rescore_risk(fixture_units)
+
+    assert "no_visible_cases" not in pricing.risk_factors
+    assert pricing.risk != before or before == "low"
+
+
+def test_rescoring_keeps_the_factors_that_do_not_depend_on_cases(fixture_units):
+    """Blast radius, cycles and dynamic edges are unaffected by case counts, so they
+    must survive the round trip through the factor strings."""
+    units = by_id(fixture_units)
+    storage = units["unit_storage"]
+    kept = [f for f in storage.risk_factors if f != "no_visible_cases"]
+
+    for unit in fixture_units:
+        unit.visible_case_count = 3
+    rescore_risk(fixture_units)
+
+    assert storage.risk_factors == kept
+
+
+def test_a_unit_with_no_cases_keeps_the_factor(fixture_units):
+    """Rescoring is not a way of making risk look better than it is."""
+    units = by_id(fixture_units)
+    for unit in fixture_units:
+        unit.visible_case_count = 0
+    rescore_risk(fixture_units)
+
+    assert "no_visible_cases" in units["unit_pricing"].risk_factors
+
+
+def test_rescoring_twice_changes_nothing(fixture_units):
+    """It reads its own output, so it has to be idempotent."""
+    for unit in fixture_units:
+        unit.visible_case_count = 4
+    rescore_risk(fixture_units)
+    once = {u.unit_id: (u.risk, list(u.risk_factors)) for u in fixture_units}
+
+    rescore_risk(fixture_units)
+    twice = {u.unit_id: (u.risk, list(u.risk_factors)) for u in fixture_units}
+
+    assert once == twice
+
+
+def test_a_cycle_unit_keeps_its_cycle_factor_through_a_rescore():
+    """`is_cycle` comes off the unit, not the factor string, so pin it."""
+    graph = nx.DiGraph()
+    graph.add_edges_from([("module_a", "module_b"), ("module_b", "module_a")])
+    units = build_units(graph, {"module_a": "a.py", "module_b": "b.py"})
+
+    assert len(units) == 1
+    assert units[0].is_cycle
+    units[0].visible_case_count = 6
+    rescore_risk(units)
+
+    assert "cycle" in units[0].risk_factors
+    assert "no_visible_cases" not in units[0].risk_factors
+
+
+def test_a_dynamic_edge_count_survives_the_round_trip():
+    graph = nx.DiGraph()
+    graph.add_nodes_from(["module_a"])
+    units = build_units(graph, {"module_a": "a.py"},
+                        dynamic_edge_counts={"module_a": 2})
+
+    assert "dynamic_edges=2" in units[0].risk_factors
+    units[0].visible_case_count = 5
+    rescore_risk(units)
+
+    assert "dynamic_edges=2" in units[0].risk_factors
+
+
+def test_a_malformed_factor_does_not_crash_the_rescore():
+    """Defensive: a factor that is not a count reads as zero rather than raising."""
+    from app.orchestration.scheduler import _factor_count
+
+    assert _factor_count(["reverse_dependants=nonsense"], "reverse_dependants") == 0
+    assert _factor_count(["cycle"], "reverse_dependants") == 0
+    assert _factor_count([], "dynamic_edges") == 0

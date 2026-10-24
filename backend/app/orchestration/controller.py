@@ -83,6 +83,18 @@ class UnitControllerImpl:
         self.exposed_case_ids: list[str] = []
         self.block_reason: str | None = None
 
+    def set_status_callback(
+        self, callback: Callable[[UnitStatus], Awaitable[None]]
+    ) -> None:
+        """Set the write-through callback after construction.
+
+        The worker's callback reports this controller's `attempts_used` as well as
+        the status (#32), so it needs the controller to exist before it is defined.
+        Binding it here keeps that order explicit instead of relying on a closure
+        over a loop variable, which would read whichever unit the loop had reached.
+        """
+        self._on_status_change = callback
+
     # ----------------------------------------------------------------- status
 
     async def _set_status(self, target: UnitStatus) -> None:

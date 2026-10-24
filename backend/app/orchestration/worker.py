@@ -139,6 +139,29 @@ async def _save(run: RunSummary) -> None:
     await store.save_run(run)
 
 
+async def _finish(run: RunSummary, verdict: RunState) -> None:
+    """End the run with its closing event already in the journal (#16).
+
+    Spec §9.3 says a client polls only while the run is non-terminal, so a client that
+    does exactly that used to stop before `report_generated` - 19 seconds before it,
+    in `run_bb0da2e79534` - and never see it. For those seconds the report endpoint
+    also had no report for a run that already read as finished.
+
+    The verdict is validated and set in memory first, so the report records the state
+    it is the report *of*; the document is only written, and so only reads terminal to
+    anyone polling, once `report_generated` or `error` is in the journal.
+    `_generate_report` always appends one or the other and never raises, so this
+    cannot leave a run un-transitioned.
+    """
+    previous = run.state
+    run.state = transition_run(run.run_id, run.state, verdict)
+    await _generate_report(run)
+    await events.append_event(
+        run.run_id, "run_state_changed", payload={"from": previous, "to": verdict}
+    )
+    await _save(run)
+
+
 async def _transition(run: RunSummary, target: RunState) -> None:
     previous = run.state
     run.state = transition_run(run.run_id, run.state, target)
@@ -215,10 +238,7 @@ async def _execute(run_id: str, plan: MigrationPlan) -> None:
             await _generate_report(run)
             return
 
-        verdict = final_verdict(_statuses(run), final_passed)
-        await _transition(run, verdict)
-        await _generate_report(run)
-        await _save(run)   # pick up report_generated's sequence
+        await _finish(run, final_verdict(_statuses(run), final_passed))
 
     except asyncio.CancelledError:
         raise
@@ -271,27 +291,41 @@ async def _migrate_units(
 
         impacted = [by_id[i] for i in impacted_units(unit_id, plan.units) if i in by_id]
 
-        async def write_status(target: UnitStatus, _unit_id: str = unit_id) -> None:
-            """Mirror the controller's status onto the run document.
-
-            The controller has already validated the transition, so this writes
-            through rather than re-validating. Without it the run document would
-            never see `verifying`, and the worker's own `migrating -> passed` would
-            be rejected by the state machine.
-            """
-            for state in run.units:
-                if state.unit_id == _unit_id:
-                    state.status = target
-                    break
-            await _save(run)
-
         controller = UnitControllerImpl(
             run.run_id, unit, impacted,
             repository_id=run.repository_id,
             base_revision=accepted_revision,
             max_patch_attempts=settings.max_patch_attempts,
-            on_status_change=write_status,
         )
+
+        async def write_status(
+            target: UnitStatus,
+            _unit_id: str = unit_id,
+            _controller: UnitControllerImpl = controller,
+        ) -> None:
+            """Mirror the controller's status and attempt count onto the run document.
+
+            The controller has already validated the transition, so this writes
+            through rather than re-validating. Without it the run document would
+            never see `verifying`, and the worker's own `migrating -> passed` would
+            be rejected by the state machine.
+
+            `attempts` is written here too (#32). It used to be set only after the
+            session ended, so the summary said `repairing` with `attempts: 0` for the
+            whole of a repair - a minute of it for `storage.py` in `run_eb826f4da0d5`.
+
+            Both the unit id and the controller are bound as defaults rather than
+            captured: this runs inside the loop over units, so a closure would read
+            whichever unit the loop had reached by the time it fired.
+            """
+            for state in run.units:
+                if state.unit_id == _unit_id:
+                    state.status = target
+                    state.attempts = _controller.attempts_used
+                    break
+            await _save(run)
+
+        controller.set_status_callback(write_status)
 
         await _run_unit_session(run, plan, unit, controller)
 

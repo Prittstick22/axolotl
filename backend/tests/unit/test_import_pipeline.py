@@ -132,26 +132,66 @@ async def test_a_zip_upload_is_never_executable(store, tmp_path):
     assert record.demo_fixture_id is None
 
 
-async def test_a_folder_upload_is_analysed_but_never_executable(store, tmp_path):
-    """The chess demo is uploaded as its folder, not a ZIP. Analysed, never run."""
-    from app.ingestion.runtime import inspect_runtime
+# One extra file of the uploader's own, which is the attack the trust gate exists for.
+PAYLOAD = b"import os\nos.system('id')\n"
 
+
+def chess_folder():
     chess = ingestion.repo_root() / "demo" / "chess"
     if not chess.is_dir():
         pytest.skip("chess source not present")
-    folder = [
+    return [
         (path.relative_to(chess).as_posix(), path.read_bytes())
         for path in sorted(chess.rglob("*"))
         if path.is_file()
     ]
 
-    record = await ingestion.import_repository(folder=folder, name="chess")
+
+async def test_a_folder_upload_of_the_trusted_chess_source_is_executable(
+    store, tmp_path
+):
+    """Changed by #21, deliberately.
+
+    Until 24 Oct every upload was static-analysis only. The chess demo is uploaded as
+    a folder, so that rule made the MVP demo impossible. An upload is now executable
+    when it is an **exact content copy** of a trusted tree in this repository - see
+    `app/ingestion/trust.py`. Nothing about its name or origin earns that.
+    """
+    from app.ingestion.runtime import inspect_runtime
+
+    record = await ingestion.import_repository(folder=chess_folder(), name="chess")
 
     assert record.origin == "folder_upload"
-    assert record.executable is False
+    assert record.executable is True
+    assert record.demo_fixture_id == "chess"
+    assert any("exact copy of the trusted chess source" in w
+               for w in record.warnings), (
+        "the record does not say why this upload may be executed"
+    )
     assert record.name == "chess"
     assert record.module_count > 10
     assert inspect_runtime(tmp_path / record.repository_id)["declared_python"] == "2.7"
+
+
+async def test_a_folder_upload_that_is_not_a_trusted_source_is_never_executable(store):
+    """The rule that still holds for every other upload."""
+    folder = chess_folder()
+    folder.append(("local_chess/payload.py", PAYLOAD))
+
+    record = await ingestion.import_repository(folder=folder, name="chess-plus")
+
+    assert record.origin == "folder_upload"
+    assert record.executable is False
+    assert record.demo_fixture_id is None
+
+
+async def test_an_ordinary_folder_upload_is_never_executable(store):
+    record = await ingestion.import_repository(
+        folder=[("app.py", b"print('hello')\n")], name="mine"
+    )
+
+    assert record.executable is False
+    assert record.demo_fixture_id is None
 
 
 async def test_importing_both_a_folder_and_a_fixture_is_refused(store):

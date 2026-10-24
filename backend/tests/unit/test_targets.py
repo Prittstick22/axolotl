@@ -31,6 +31,9 @@ def test_endpoint_lists_every_target(client: TestClient):
     }
     assert set(body[0]) == {
         "target_id", "label", "supported", "description", "unsupported_reason",
+        # Additive under §11 (#21): the Plan screen shows the target version instead
+        # of hardcoding "Python 3.14" in the page.
+        "target_python",
     }
 
 
@@ -59,3 +62,36 @@ def test_unknown_target_is_rejected_the_same_way():
         require_supported_target("cobol_to_rust")
     assert caught.value.code == "UNSUPPORTED_TARGET"
     assert caught.value.status_code == 422
+
+
+# --------------------------------------------------------------------------
+# #21: the Plan screen needs the version, and the reasons have to fit on it
+# --------------------------------------------------------------------------
+
+def test_the_python_2_target_declares_the_version_it_targets():
+    from app.api.targets import _BY_ID
+
+    assert _BY_ID["python2_to_3"].target_python == "3.14"
+    assert _BY_ID["modern_python3"].target_python == "3.12"
+
+
+def test_python2_to_3_is_still_unsupported_until_the_sandbox_can_run_27():
+    """Marking it supported before #22 and #23 would move the failure from a clear
+    422 at planning time into a baseline that cannot run - discovered mid-demo."""
+    from app.api.targets import _BY_ID
+
+    assert _BY_ID["python2_to_3"].supported is False
+
+
+def test_every_unsupported_reason_is_one_short_line():
+    """Dev 5: at 1280x720 the longer reasons took two to four lines each and pushed
+    the target column below the fold."""
+    from app.api.targets import MIGRATION_TARGETS
+
+    for target in MIGRATION_TARGETS:
+        if target.supported:
+            continue
+        reason = target.unsupported_reason
+        assert reason, f"{target.target_id} is unsupported without saying why"
+        assert "\n" not in reason
+        assert len(reason) <= 70, f"{target.target_id}: {len(reason)} characters"

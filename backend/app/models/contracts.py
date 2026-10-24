@@ -148,6 +148,11 @@ class MigrationTarget(BaseModel):
     supported: bool
     description: str
     unsupported_reason: str | None = None
+    # Additive under §11 (optional, defaults to None, breaks no consumer). The Plan
+    # screen shows "Python 2.7 (declared) -> Python 3.14 (target)"; without this it
+    # had "Python 3.14" written into the page. The declared side comes from the
+    # repository's own runtime metadata, so only the target belongs here.
+    target_python: str | None = None
 
 
 class MigrationUnit(BaseModel):

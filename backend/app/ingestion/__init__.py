@@ -28,6 +28,7 @@ from app.analysis.identifiers import hash_file, new_repository_id, snapshot_hash
 from app.config import get_settings
 from app.errors import VALIDATION_ERROR, AppError, database_unavailable
 from app.graph.builder import add_test_target_edges, build_edges, build_nodes
+from app.ingestion import trust
 from app.ingestion.safety import (
     MAX_ARCHIVE_BYTES,
     MAX_FILES,
@@ -183,6 +184,23 @@ async def _import_into(
     file_hashes = {rel: hash_file(destination / rel) for rel in copied}
     snapshot_hash = snapshot_hash_for(file_hashes)
 
+    # An upload earns execution only by being an exact copy of a trusted tree in this
+    # repository (#21). Nothing about its name or origin counts; see ingestion/trust.py
+    # for why the comparison normalises line endings and why the recorded
+    # `snapshot_hash` above is not normalised.
+    trusted_warnings: list[str] = []
+    if not executable:
+        matched = trust.trusted_fixture_for(destination, copied)
+        if matched:
+            executable = True
+            demo_fixture_id = demo_fixture_id or matched
+            log.info("%s is an exact copy of the trusted %s source; executable",
+                     repository_id, matched)
+            trusted_warnings.append(
+                f"this upload is an exact copy of the trusted {matched} source, so "
+                f"executable migration is enabled for it"
+            )
+
     analyses = _analyse(destination, copied, repository_id, snapshot_hash)
     record = await _persist(
         repository_id=repository_id,
@@ -234,6 +252,7 @@ async def _import_into(
     # Behaviour cases and search indexing both run after `_persist` has already
     # written the record, so their warnings would otherwise live only on the object
     # returned to this one caller and never reach GET /repositories/{id}.
+    record.warnings.extend(trusted_warnings)
     record.warnings = record.warnings[:50]
     await graphstore.save_repository(record)
 

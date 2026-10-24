@@ -5,6 +5,14 @@
 Only `modern_python3` is supported. The rest are returned with `supported=false` and a
 reason so the UI can show them disabled with an explanation rather than hiding them -
 asking for one is a 422 UNSUPPORTED_TARGET (T-08). Support wording follows Spec §3.2.
+
+Each `unsupported_reason` is **one short line**. Dev 5 found the longer ones took two
+to four lines each on the Plan screen at 1280x720 and pushed the target column below
+the fold, so the reader had to scroll to see the supported target.
+
+`target_python` lets the Plan screen say "Python 2.7 (declared) -> Python 3.14
+(target)" without hardcoding a version in the page. The declared side comes from the
+repository's own runtime metadata, so only the target lives here.
 """
 
 from fastapi import APIRouter
@@ -23,43 +31,40 @@ MIGRATION_TARGETS: list[MigrationTarget] = [
             "Legacy-style Python 3 to modern typed Python 3: same public behaviour, "
             "cleaner structure, type hints, dataclasses where safe."
         ),
+        target_python="3.12",   # what the runner image provides today
     ),
     MigrationTarget(
         target_id="fastapi",
         label="Flask to FastAPI",
         supported=False,
         description="Port a Flask-style web layer to FastAPI.",
-        unsupported_reason="Stretch goal, not implemented in the MVP.",
+        unsupported_reason="Stretch goal: not implemented in the MVP.",
     ),
     MigrationTarget(
         target_id="async_python",
         label="Sync to async Python",
         supported=False,
         description="Convert synchronous call paths to async/await.",
-        unsupported_reason=(
-            "Not in the MVP: changing concurrency changes observable behaviour, so "
-            "differential verification would not be meaningful."
-        ),
+        unsupported_reason="Not in the MVP: async changes observable behaviour.",
     ),
     MigrationTarget(
         target_id="python_to_typescript",
         label="Python to TypeScript",
         supported=False,
         description="Translate Python modules to TypeScript.",
-        unsupported_reason=(
-            "Not in the MVP: cross-language migration has no shared runtime for the "
-            "differential verifier to execute both sides in."
-        ),
+        unsupported_reason="Not in the MVP: no shared runtime to compare in.",
     ),
     MigrationTarget(
         target_id="python2_to_3",
         label="Python 2 to Python 3",
         supported=False,
-        description="Upgrade a Python 2 codebase to Python 3.",
-        unsupported_reason=(
-            "Not in the MVP: capturing a baseline needs a Python 2 runtime in the "
-            "sandbox, which the runner image does not provide."
-        ),
+        description="Upgrade a Python 2 codebase to Python 3.14.",
+        # Flip `supported` to True once #22 (a sandbox that runs 2.7 and 3.14) and #23
+        # (chess behaviour cases) land. Marking it supported sooner would move the
+        # failure from a clear 422 at planning time into a baseline that cannot run,
+        # which is a worse place to discover it - mid-demo.
+        unsupported_reason="Not in the MVP yet: needs Python 2.7 in the sandbox.",
+        target_python="3.14",
     ),
 ]
 

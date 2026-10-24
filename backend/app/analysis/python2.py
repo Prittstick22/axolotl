@@ -6,7 +6,8 @@ line used to cost the whole file: no symbols, no imports, no chunks, so a Python
 repository came out `partial` with holes in its graph.
 
 When `ast.parse` fails, this rewrites **those constructs only**, in memory, with
-lib2to3's own fixers for them, and the analyser parses the result. Three rules:
+lib2to3's own fixers for them (from `fissix`, below), and the analyser parses the
+result. Three rules:
 
   - **The baseline is never rewritten.** The text produced here is used to build a
     parse tree and is then thrown away. The snapshot, the stored module source and every
@@ -20,21 +21,24 @@ lib2to3's own fixers for them, and the analyser parses the result. Three rules:
     in Python 3 and are left alone: changing them is the migration's job, not the
     analyser's.
 
-lib2to3 ships with the backend's Python 3.12 and was removed in 3.13. If the backend
-moves past 3.12, `fissix` is the maintained copy of the same code.
+The fixers come from `fissix`, the maintained standalone copy of the standard
+library's `lib2to3`, not from `lib2to3` itself. `lib2to3` is deprecated, gone from
+Python 3.13, and was missing from the Python 3.12 that GitHub CI installs with `uv`
+(PR #59's first run), so code importing it silently did nothing there while passing
+on a machine that had it. `fissix` is an ordinary dependency and behaves the same
+everywhere.
 """
 
 from __future__ import annotations
 
 import ast
 import logging
-import warnings
 
 log = logging.getLogger(__name__)
 
 # Each rewrites a construct within its own line(s); none adds or removes a line.
 SYNTAX_FIXERS = tuple(
-    f"lib2to3.fixes.fix_{name}"
+    f"fissix.fixes.fix_{name}"
     for name in (
         "print",        # print "x"           -> print("x")
         "except",       # except E, e:        -> except E as e:
@@ -57,16 +61,11 @@ def python2_tree(source: str, filename: str) -> ast.Module | None:
     """
     text = source if source.endswith("\n") else source + "\n"
     try:
-        with warnings.catch_warnings():
-            # lib2to3 announces its own deprecation on import; it is still the
-            # Python 2 grammar shipped with this interpreter.
-            warnings.simplefilter("ignore", DeprecationWarning)
-            warnings.simplefilter("ignore", PendingDeprecationWarning)
-            from lib2to3.refactor import RefactoringTool
+        from fissix.refactor import RefactoringTool
 
-            rewritten = str(RefactoringTool(list(SYNTAX_FIXERS))
-                            .refactor_string(text, filename))
-    except Exception as exc:  # noqa: BLE001 - lib2to3 raises several unrelated types
+        rewritten = str(RefactoringTool(list(SYNTAX_FIXERS))
+                        .refactor_string(text, filename))
+    except Exception as exc:  # noqa: BLE001 - the parser raises several unrelated types
         log.info("%s is not Python 2 either: %s", filename, exc)
         return None
 

@@ -168,7 +168,7 @@ def test_a_file_that_is_not_python_is_still_a_syntax_error(analyses):
 
 def test_a_reading_that_would_move_lines_is_refused(monkeypatch):
     """Spans and chunks would point at the wrong lines; no tree is better."""
-    from lib2to3 import refactor
+    from fissix import refactor
 
     real = refactor.RefactoringTool.refactor_string
 

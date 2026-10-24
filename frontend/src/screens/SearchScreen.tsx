@@ -167,8 +167,8 @@ function AskPane({ repoId, graph, onSelect }: { repoId: string; graph: UseQueryR
                         >
                           {citation.path}:{citation.start_line}{citation.end_line !== citation.start_line ? `–${citation.end_line}` : ''}
                         </button>
-                        {citation.symbol && <p className="font-mono text-xs text-muted-foreground">{citation.symbol}</p>}
-                        <p className="mt-1 font-mono text-xs leading-5 whitespace-pre-wrap">{citation.snippet}</p>
+                        {citation.symbol && <p className="font-mono text-sm text-muted-foreground">{citation.symbol}</p>}
+                        <p className="mt-1 font-mono text-sm leading-5 whitespace-pre-wrap">{citation.snippet}</p>
                       </div>
                     );
                   })}
@@ -177,12 +177,12 @@ function AskPane({ repoId, graph, onSelect }: { repoId: string; graph: UseQueryR
               <section aria-label="Retrieval evidence" className="flex flex-col gap-1 border-t pt-2">
                 <h4 className="text-sm font-medium">Retrieval</h4>
                 {turn.answer.retrieval.map((item, retrievalIndex) => (
-                  <p key={`${item.tool}-${retrievalIndex}`} className="break-words text-xs text-muted-foreground">
+                  <p key={`${item.tool}-${retrievalIndex}`} className="break-words text-sm text-muted-foreground">
                     <span className="font-mono">{item.tool}</span> · “{item.query}”{item.mode_used && ` · ${item.mode_used}`}
                     {item.native_hybrid !== null && ` · ${item.native_hybrid ? 'native hybrid' : 'app-side fusion'}`} · {item.hit_count} hits
                   </p>
                 ))}
-                {!turn.answer.retrieval.length && <p className="text-xs text-muted-foreground">No retrieval calls were reported.</p>}
+                {!turn.answer.retrieval.length && <p className="text-sm text-muted-foreground">No retrieval calls were reported.</p>}
               </section>
             </article>
           ))}

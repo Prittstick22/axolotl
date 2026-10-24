@@ -17,7 +17,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 function Heuristic({ basis }: { basis: string }) {
-  return basis === 'name_match' ? <span className="ml-2 rounded-sm border border-warning px-1.5 py-0.5 text-xs text-warning">Heuristic</span> : null;
+  return basis === 'name_match' ? <span className="ml-2 rounded-sm border border-warning px-1.5 py-0.5 text-sm text-warning">Heuristic</span> : null;
 }
 
 function Module({ change }: { change: DependencyModuleChange }) {

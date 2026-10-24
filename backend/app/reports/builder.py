@@ -15,6 +15,7 @@ import logging
 from app.models.contracts import RunReport, RunSummary
 from app.orchestration import events, ports, store
 from app.reports import artefacts
+from app.reports.performance import build_performance
 
 log = logging.getLogger(__name__)
 
@@ -78,6 +79,7 @@ async def build_report(run: RunSummary) -> RunReport:
         coverage_caveats=_caveats(run, journal, passed),
         limitations=_limitations(run, journal, t16),
         narrative=await _narrative(run, journal),
+        performance=await build_performance(run, final_revision, _final_verification_id(journal)),
         artefact_ids=artefact_ids,
         generated_at=store.utcnow(),
     )

@@ -34,6 +34,7 @@ and no real repository/run IDs were supplied. Neither observation completes a
 rehearsal or a live-stack check. Both outputs are under the ignored local directory
 `.axolotl_workspaces/demo-preparation/`; the scripts regenerate them on a demo machine.
 
+
 Run the introduction and hand-off straight into the three-minute demo on the
 actual demo machine. Use a stopwatch and exercise the fallback at least once.
 Repeat after any material build/script change. Record failure honestly and fix it

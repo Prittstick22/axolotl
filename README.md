@@ -34,9 +34,10 @@ the newer PyMongo async corrections in place of the supplied Motor instructions.
 > tests and the sandbox run on, until chess replaces it ([#54](https://github.com/Prittstick22/axolotl/issues/54)).
 > Chess readiness: the Python 2.7/3.14 sandbox landed in
 > [#22](https://github.com/Prittstick22/axolotl/issues/22), the chess behaviour suite
-> merged in [PR #69](https://github.com/Prittstick22/axolotl/pull/69), and target
-> enablement is [PR #76](https://github.com/Prittstick22/axolotl/pull/76). Check the
+> merged in [PR #69](https://github.com/Prittstick22/axolotl/pull/69), and the target
+> is enabled by merged [PR #76](https://github.com/Prittstick22/axolotl/pull/76). Check the
 > deployed API for availability. That work is tracked in [#30](https://github.com/Prittstick22/axolotl/issues/30); the full plan is in
+
 > [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md). Planning documents describing the
 > orders demo reflect the earlier plan.
 

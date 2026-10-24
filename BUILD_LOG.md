@@ -1810,6 +1810,21 @@ remain outstanding: this checkout has no working demo services, Docker or suppli
 demo URL/upload destination, and the chess target is still disabled pending
 integration. These documentation changes do not close the three demo tickets.
 
+## 24 Oct 2026 — Dev 4: measured sandbox runtime reports (#46)
+
+Added five CPU-time samples after one warm-up for successful, reproducible cases
+inside the Linux sandbox, including Python 2.7/3.14. Fresh inputs and fixture resets
+sit outside the measured interval. Benchmark failures discard timings without
+changing the original functional outcome. Samples persist alongside the median.
+
+Reports aggregate matching paired cases from the successful final verification
+of the final accepted revision. The frontend shows a runtime panel only when
+measurements exist, explicitly limited to tested cases. Missing/old data remains
+null. Spread is a descriptive heuristic, not proof of a speed improvement.
+See `docs/runtime-timings.md` for method, costs and limits. Added 22 offline tests
+and extended the existing real-container cross-interpreter check.
+
+
 ---
 
 ## Dev 1: Gemini rate limits are waited out, not lost (#47)
@@ -1850,4 +1865,5 @@ human rehearsal. The checker correctly failed on the local machine because the
 API is not running and no demo repository/run IDs were supplied. Local evidence
 and audio are under the ignored `.axolotl_workspaces/demo-preparation/` directory.
 Real recordings, human rehearsals, factual sign-off and uploads remain pending.
+
 

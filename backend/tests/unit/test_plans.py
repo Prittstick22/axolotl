@@ -202,3 +202,65 @@ async def test_a_model_failure_is_a_503_with_its_reason_not_a_500(world, monkeyp
     assert "17h 56m" in raised.value.message
     assert world["saved"] == []
 
+
+
+# --------------------------------------------------------------------------
+# #21: a Python 2 migration can be planned
+# --------------------------------------------------------------------------
+
+async def test_a_plan_can_be_built_for_python2_to_3(world):
+    """The 422 this used to raise was the whole of #21's last box.
+
+    `create_plan` resolves the target through `require_supported_target`, so an
+    unsupported one stopped the plan before any graph was read. With #22 (a 2.7 and a
+    3.14 image) and #23 (chess behaviour cases) in, it resolves.
+    """
+    world["cases"] = [Case("unit_pricing")] * 8
+
+    plan = await plans_module.create_plan(REPO, "python2_to_3")
+
+    assert plan.target_id == "python2_to_3"
+    assert plan.units, "a plan with no units is not a plan"
+    assert plan.status == "draft"
+
+
+async def test_the_plan_still_refuses_a_target_the_sandbox_cannot_run(world):
+    """Supporting one more target did not open the gate for the rest."""
+    from app.errors import AppError
+
+    with pytest.raises(AppError) as caught:
+        await plans_module.create_plan(REPO, "async_python")
+
+    assert caught.value.status_code == 422
+    assert caught.value.code == "UNSUPPORTED_TARGET"
+    # The caller is told what it *can* ask for, not only what it cannot.
+    assert "python2_to_3" in caught.value.details["supported"]
+
+
+async def test_a_python_2_plan_still_needs_an_executable_repository(world, monkeypatch):
+    """Supporting the target is not permission to run untrusted code. A folder upload
+    that is not an exact copy of a trusted tree stays static-analysis only (#21), and
+    `create_plan` refuses it whatever target is asked for.
+    """
+    from app.errors import AppError
+    from app.orchestration import ports as ports_module
+
+    async def untrusted_repository(repo_id):
+        from datetime import UTC, datetime
+
+        from app.models.contracts import RepositoryRecord
+
+        return RepositoryRecord(
+            repository_id=repo_id, name="someone-elses-code",
+            snapshot_hash="sha256:abc", origin="folder_upload", executable=False,
+            demo_fixture_id=None, file_count=4, module_count=4, symbol_count=20,
+            test_file_count=0, analysis_status="ok", created_at=datetime.now(UTC),
+        )
+
+    monkeypatch.setattr(ports_module, "get_repository", untrusted_repository)
+
+    with pytest.raises(AppError) as caught:
+        await plans_module.create_plan(REPO, "python2_to_3")
+
+    assert caught.value.status_code == 409
+    assert caught.value.code == "REPOSITORY_NOT_EXECUTABLE"

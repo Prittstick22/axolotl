@@ -8,8 +8,8 @@ recording of chess, never a different project. The 1:00–1:30 introduction is i
 
 **Status: script ready; real-stack recording and two rehearsals pending.** This
 document does not establish that a model-generated chess migration has completed.
-#22's interpreters and #23's 24-case suite are merged; target enablement is tracked
-by #21/PR #76. Check the deployed API, not this document, for availability. Do not
+#22's interpreters, #23's 24-case suite and #21's target enablement (PR #76) are
+merged. Check the deployed API, not this document, for availability. Do not
 start the live sequence until the target is enabled and a real end-to-end run succeeds.
 
 ## Before the clock starts
@@ -22,6 +22,7 @@ start the live sequence until the target is enabled and a real end-to-end run su
   and never approves a plan. Exit 1 means failed or missing checks, including no
   supplied run; exit 0 passes these automated checks only. It does not replace
   inspecting the actual runtimes, downloaded artifacts or human rehearsals.
+
 - Use the same commit, demo machine, Atlas database and model as the recording.
   Record their identifiers in [rehearsal-log.md](rehearsal-log.md).
 - Docker must be running. Build/check all production images using
@@ -31,6 +32,7 @@ start the live sequence until the target is enabled and a real end-to-end run su
 - Run `uv run pytest tests/integration/test_sandbox_runtimes_live.py -v -rs`
   from `backend/`. Require the container tests to pass, not skip. Run #23's
   chess-case tests too, following [chess-demo.md](chess-demo.md).
+
 - `/api/v1/system/status`: MongoDB reachable, keyword and vector indexes ready,
   Gemini reachable with the intended model. Confirm that model ID in an actual
   run record. Do not claim a model merely because its name is configured.
@@ -41,6 +43,7 @@ start the live sequence until the target is enabled and a real end-to-end run su
   Preserve query/generation quota; do not re-index repeatedly before presenting.
 - Confirm the imported chess case inventory is 12 visible plus 12 held out after
   re-importing the fixture. Keep hidden inputs off screen and out of the agent's initial context.
+
 - Prepare a fresh plan, the Graph, Run and Report tabs, and the genuine earlier
   chess recording. Save the repository, plan and run URLs in the rehearsal log.
   Keep the recorded run distinct from the live one.
@@ -68,6 +71,7 @@ Say: **“This run did not produce a counterexample. Here is a separate, deliber
 broken chess candidate that tests the verifier.”** Use the chess promotion
 regression check in `backend/tests/integration/test_chess_cases_docker.py` from
 merged PR #69. It replaces the requested promotion piece with a queen; visible
+
 cases still match and the held-out underpromotion/black-promotion cases fail.
 
 Prepare its real container output in advance with

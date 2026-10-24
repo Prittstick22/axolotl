@@ -3,6 +3,7 @@
 **Deliverable: talk track, followed by the three-minute demo.** Target: 1:00–1:30.
 This is ready for Will to rehearse; his delivery has not been timed. The word-count
 estimate and synthetic practice audio are not human rehearsal results. Complete the two timed runs in
+
 [rehearsal-log.md](rehearsal-log.md), including the hand-off.
 The spoken track is 183 words: about 1:18 at 140 words/minute, before extra pauses.
 
@@ -63,6 +64,7 @@ by Git). The script refuses to overwrite an existing output; use `-OutputPath`
 with a new filename for another take. `-Voice` and `-Rate` can be changed; remeasure
 the resulting file if changed. Human rehearsal slots remain pending.
 
+
 ## Freeze check: every claim needs current evidence
 
 - **Will:** the named owner identified in #70 and [chess-demo.md](chess-demo.md).
@@ -75,9 +77,10 @@ the resulting file if changed. Human rehearsal slots remain pending.
   Gemini model only when its recorded run identity supports it.
 - **Dev 2 review, pending:** confirm target availability, real plan approval,
   dependency ordering, blocked-unit behavior, final verification and downloads on
-  the demonstrated build. #22 and #23 are merged; target enablement is PR #76.
+  the demonstrated build. #22, #23 and target enablement (PR #76) are merged.
   Verify the deployed target and a real run before freezing live claims.
   See [demo-script.md](demo-script.md).
+
 - **Atlas:** check current status and search responses. Say “native Atlas hybrid
   fusion” only when `native_hybrid` is true. See [mongodb-bounty.md](mongodb-bounty.md)
   for technical evidence, not for chess search rankings; its orders examples do

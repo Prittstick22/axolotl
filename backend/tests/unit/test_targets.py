@@ -8,9 +8,12 @@ from app.errors import AppError
 from tests.conftest import API
 
 
-def test_only_modern_python3_is_supported():
+def test_the_two_supported_targets_are_the_two_the_sandbox_can_run():
+    """`python2_to_3` joined on 24 Oct, once #22 gave the sandbox a 2.7 and a 3.14
+    image and #23 gave chess behaviour cases. Everything else stays disabled with a
+    reason, which is what the Plan screen shows."""
     supported = [t.target_id for t in MIGRATION_TARGETS if t.supported]
-    assert supported == ["modern_python3"]
+    assert supported == ["modern_python3", "python2_to_3"]
 
 
 def test_every_unsupported_target_explains_itself():
@@ -43,7 +46,7 @@ def test_supported_target_resolves():
 
 @pytest.mark.parametrize(
     "target_id",
-    ["fastapi", "async_python", "python_to_typescript", "python2_to_3"],
+    ["fastapi", "async_python", "python_to_typescript"],
 )
 def test_unsupported_target_is_rejected_with_422(target_id):
     """T-08: disabled or rejected at the backend with a clear error."""
@@ -75,12 +78,42 @@ def test_the_python_2_target_declares_the_version_it_targets():
     assert _BY_ID["modern_python3"].target_python == "3.12"
 
 
-def test_python2_to_3_is_still_unsupported_until_the_sandbox_can_run_27():
-    """Marking it supported before #22 and #23 would move the failure from a clear
-    422 at planning time into a baseline that cannot run - discovered mid-demo."""
+def test_python2_to_3_is_supported_now_that_both_halves_exist():
+    """It was deliberately `False` until 24 Oct, because marking it supported before
+    #22 and #23 would have moved the failure from a clear 422 at planning time into a
+    baseline that could not run - discovered mid-demo rather than mid-sentence.
+
+    Both halves now exist, so the two things that made it false are asserted here
+    instead: if either is removed, this fails rather than the demo doing it.
+    """
     from app.api.targets import _BY_ID
 
-    assert _BY_ID["python2_to_3"].supported is False
+    target = _BY_ID["python2_to_3"]
+    assert target.supported is True
+    assert target.unsupported_reason is None, "a supported target needs no excuse"
+    assert target.target_python == "3.14"
+
+
+def test_the_sandbox_has_an_image_for_both_sides_of_a_python_2_migration():
+    """Half of why `python2_to_3` is supported (#22). Without both images the
+    baseline or the candidate cannot run."""
+    from app.config import get_settings
+
+    settings = get_settings()
+    assert settings.runner_image_py27
+    assert settings.runner_image_py314
+    assert settings.runner_image_py27 != settings.runner_image_py314
+
+
+def test_chess_has_its_own_held_out_suite():
+    """The other half (#23). A target that can be planned but not verified is worse
+    than one that is honestly unsupported."""
+    from app.verification.cases import HELD_OUT_BY_FIXTURE
+
+    assert "chess" in HELD_OUT_BY_FIXTURE
+    assert HELD_OUT_BY_FIXTURE["chess"] != HELD_OUT_BY_FIXTURE["legacy_orders"], (
+        "chess would be verified against the orders cases"
+    )
 
 
 def test_every_unsupported_reason_is_one_short_line():

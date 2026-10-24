@@ -159,9 +159,10 @@ the gotchas behind them.
 | Keyword, vector and native `$rankFusion` hybrid search | ✅ *(Dev 3)* |
 | Workspaces, patches, differential verifier | ✅ *(Dev 4)* |
 | Agent adapter, prompts, tools | ✅ *(Dev 1)* — `propose_plan`, `run_unit_session`, `narrate_report`, all three against `gemini-4-argon` |
-| Chess (Python 2.7 → 3.14) planned and run | ⬜ — the gap between here and the demo, [#30](https://github.com/Prittstick22/axolotl/issues/30) |
+| Chess (Python 2.7 → 3.14) can be planned and verified | ✅ — dual-runtime sandbox ([#22](https://github.com/Prittstick22/axolotl/issues/22)), chess behaviour cases ([#23](https://github.com/Prittstick22/axolotl/issues/23)), `python2_to_3` supported ([#21](https://github.com/Prittstick22/axolotl/issues/21)) |
+| A chess run that reaches a verdict | ⬜ — **nothing has run end to end yet**, [#4](https://github.com/Prittstick22/axolotl/issues/4) and [#7](https://github.com/Prittstick22/axolotl/issues/7). This is the gap between here and the demo |
 
-676 offline backend tests, 9 in a real sandbox container, 56 live tests against the
+778 offline backend tests, 25 in real sandbox containers, 56 live tests against the
 real Atlas cluster and Gemini behind `-m live`, and 16 frontend tests. A plain
 `uv run pytest` excludes the live ones, because one live run costs about 48 Gemini
 embedding calls against a 1000-a-day free tier. CI runs the offline, container and
@@ -328,12 +329,12 @@ Dev 4's fuller treatment is [`docs/safety-and-limitations.md`](docs/safety-and-l
 
 | | |
 |---|---|
-| **Chess cannot be migrated** | the sandbox has no 2.7 or 3.14 runtime ([#22](https://github.com/Prittstick22/axolotl/issues/22)), chess has no behaviour cases ([#23](https://github.com/Prittstick22/axolotl/issues/23)), and `python2_to_3` is `supported: false` until both land ([#21](https://github.com/Prittstick22/axolotl/issues/21)) |
-| A 429 mid-run still loses a unit | the failure is now reported honestly, but the retry window is outstanding ([#47](https://github.com/Prittstick22/axolotl/issues/47)) |
-| Free-tier Gemini quota | 1000 embedding calls a day; one live test run is about 48, and a debugging session spent a whole key on 23 Oct |
-| Snapshots are machine-local | a repository imported on one laptop cannot be re-indexed on another; the endpoint says so with 409 `SNAPSHOT_UNAVAILABLE` |
-| Report runtime timings | `performance` is always `null`; nothing times cases yet ([#46](https://github.com/Prittstick22/axolotl/issues/46)) |
-| A run turns terminal before its last event | clients that stop polling at a terminal state can miss `report_generated` ([#16](https://github.com/Prittstick22/axolotl/issues/16)) |
+| **No chess run has reached a verdict yet** | every piece is in place and none of it has been run together on chess. This is the honest headline gap ([#4](https://github.com/Prittstick22/axolotl/issues/4), [#7](https://github.com/Prittstick22/axolotl/issues/7)) |
+| Free-tier Gemini quota | 1000 embedding calls a day; one live test run is about 48, and a debugging session spent a whole key on 23 Oct. A plain `uv run pytest` excludes the live suite for that reason |
+| Snapshots are machine-local | a repository imported on one laptop cannot be re-indexed on another; the endpoint says so with 409 `SNAPSHOT_UNAVAILABLE`, so whoever demos must be whoever imported |
+| Report runtime timings are conditional | `performance` is filled ([#46](https://github.com/Prittstick22/axolotl/issues/46)) only for a completed `trusted_docker` run whose final verification passed on the accepted revision; otherwise `null`, and the Report leaves the panel out rather than showing zeroes |
+| The Search screen is a placeholder | the API is live and tested; the screen is not built |
+| `legacy_orders` is a test fixture, not a demo | it is what the backend tests and the sandbox run on. The demo is chess |
 
 ## Credits
 

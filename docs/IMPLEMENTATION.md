@@ -188,8 +188,12 @@ icons and IBM Plex, following the template in [`design/`](design/).
 
 > **Decision, 24 Oct 2026:** the demo is Will's chess game, migrated from Python 2.7 to Python 3.14.
 > **Chess is the only demo; there is no backup.** `legacy_orders` stays in the repo only as the test
-> fixture until chess replaces it ([#54](https://github.com/Prittstick22/axolotl/issues/54)). Chess can't be migrated yet:
-> see [#30](https://github.com/Prittstick22/axolotl/issues/30) and [PROJECT_STATUS.md](PROJECT_STATUS.md).
+> fixture until chess replaces it ([#54](https://github.com/Prittstick22/axolotl/issues/54)). Chess can now be
+> imported, planned and verified - the dual-runtime sandbox ([#22](https://github.com/Prittstick22/axolotl/issues/22)),
+> its own behaviour cases ([#23](https://github.com/Prittstick22/axolotl/issues/23)) and a supported
+> `python2_to_3` target ([#21](https://github.com/Prittstick22/axolotl/issues/21)) all landed on 24 Oct.
+> **No chess run has reached a verdict yet** ([#4](https://github.com/Prittstick22/axolotl/issues/4),
+> [#7](https://github.com/Prittstick22/axolotl/issues/7)), so the chain is assembled and unproven.
 
 - `demo/legacy_orders/`: the test fixture (not a demo), with visible and held-out behaviour
   cases and a seeded rounding rule. A banker's-rounding patch keeps all 12 of its own
@@ -215,7 +219,7 @@ icons and IBM Plex, following the template in [`design/`](design/).
 - **Agent patches through the verifier**: in run `run_bb0da2e79534` on Atlas Local, Argon's
   patches for `customers.py` and `pricing.py` passed verification. The run ended
   `completed_with_warnings` at 2 of 6 units (see Known gaps).
-- **Tests**: 676 offline backend tests, 9 in a real sandbox container, 56 live Atlas
+- **Tests**: 778 offline backend tests, 25 in real sandbox containers, 56 live Atlas
   and Gemini tests behind `-m live`, and 16 frontend vitest tests. A plain
   `uv run pytest` excludes the live ones (`addopts`), because one live run costs about
   48 Gemini embedding calls against a 1000-a-day free tier. CI
@@ -232,10 +236,11 @@ icons and IBM Plex, following the template in [`design/`](design/).
 
 ## 8. Known gaps
 
-- The Diff and Search screens are not built ([#5](https://github.com/Prittstick22/axolotl/issues/5),
-  [#20](https://github.com/Prittstick22/axolotl/issues/20)).
-- The chess demo needs dual-runtime sandbox selection, behaviour cases and target
-  registration. Chess is the MVP demo since 24 Oct; tracked in [#30](https://github.com/Prittstick22/axolotl/issues/30).
+- **No chess run has reached a verdict yet.** Every piece is in place and none of it
+  has been run together on chess ([#4](https://github.com/Prittstick22/axolotl/issues/4),
+  [#7](https://github.com/Prittstick22/axolotl/issues/7)). This is the headline gap.
+- The Search screen is not built ([#20](https://github.com/Prittstick22/axolotl/issues/20)); its
+  API is live and tested. The Verification/Diff and Report screens landed on 24 Oct.
 - `calls` edges are not extracted.
 - The Gemini free-tier embedding quota is 1000 requests a day; the replay cache needs
   one run with quota available to populate it.

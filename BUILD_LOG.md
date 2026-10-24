@@ -1794,3 +1794,18 @@ which also needs the target (#21) and chess cases (#23).
 
 714 offline backend tests (15 new), 22 container tests (13 new), ruff clean. No frontend
 changes.
+
+## 24 Oct 2026 — Dev 4: chess presentation and recording kit (#70, #14, #15)
+
+Prepared the 183-word introduction (estimated 1:18 at 140 words/minute), judge Q&A,
+three-minute click-by-click demo, preflight and clearly labelled fallback. Added
+three submission shot lists and an unfilled evidence/rehearsal/upload log. The
+newer chess-only decision takes precedence over the old orders fallback. The
+MongoDB script uses real API search responses because Graph's module filter is
+not Atlas search. README links the kit and reflects #22's merged runtimes.
+
+Checked commands, UI labels, relative links and current code claims. No actual
+spoken timing, human rehearsal, Dev 1/2 sign-off, video or upload is claimed. Those
+remain outstanding: this checkout has no working demo services, Docker or supplied
+demo URL/upload destination, and the chess target is still disabled pending
+integration. These documentation changes do not close the three demo tickets.

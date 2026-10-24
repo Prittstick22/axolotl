@@ -32,9 +32,10 @@ the newer PyMongo async corrections in place of the supplied Motor instructions.
 > Will's terminal chess game, migrated from Python 2.7 to Python 3.14. There is no backup
 > demo. The `legacy_orders` fixture stays in the repo only as the test fixture the backend
 > tests and the sandbox run on, until chess replaces it ([#54](https://github.com/Prittstick22/axolotl/issues/54)). Chess can't be
-> migrated yet: the sandbox has no
-> Python 2.7 or 3.14 runtime, there are no chess behaviour cases, and `python2_to_3` is
-> unsupported. That work is tracked in [#30](https://github.com/Prittstick22/axolotl/issues/30); the full plan is in
+> migrated through the enabled UI target yet: the Python 2.7/3.14 sandbox landed in
+> [#22](https://github.com/Prittstick22/axolotl/issues/22), the chess behaviour suite is
+> in [PR #69](https://github.com/Prittstick22/axolotl/pull/69), and `python2_to_3` remains
+> disabled pending integration. That work is tracked in [#30](https://github.com/Prittstick22/axolotl/issues/30); the full plan is in
 > [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md). Planning documents describing the
 > orders demo reflect the earlier plan.
 
@@ -81,7 +82,10 @@ Node 20+, Docker running, and a MongoDB Atlas cluster plus a Gemini API key.
 | [docs/safety-and-limitations.md](docs/safety-and-limitations.md) | Sandbox protections and their honest limits *(Dev 4)* |
 | [docs/mongodb-atlas.md](docs/mongodb-atlas.md) | Collections, Search / Vector / Hybrid indexes *(Dev 3)* |
 | [docs/argon-agent.md](docs/argon-agent.md) | Model adapter, tool schemas, prompts *(Dev 1)* |
-| [docs/demo-script.md](docs/demo-script.md) | The 3-minute chess demo sequence *(demo work, not MVP; unassigned)* |
+| [docs/presentation.md](docs/presentation.md) | Will's 1:00–1:30 introduction and judge Q&A (#70) |
+| [docs/demo-script.md](docs/demo-script.md) | The timed 3-minute chess demo, preflight and fallback (Dev 4, #14) |
+| [docs/submission-videos.md](docs/submission-videos.md) | Three video scripts, shot lists and upload checks (#15) |
+| [docs/rehearsal-log.md](docs/rehearsal-log.md) | Actual-run evidence, two rehearsals and checked video links |
 | [runner/policy.md](runner/policy.md) | The exact sandbox profile, and what it does **not** protect against |
 | [demo/legacy_orders/README.md](demo/legacy_orders/README.md) | The test fixture (not a demo), its seeded rounding rule and parameters |
 | [BUILD_LOG.md](BUILD_LOG.md) | Timestamped record of what was built when, and the open decisions |

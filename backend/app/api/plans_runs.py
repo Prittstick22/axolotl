@@ -114,13 +114,29 @@ async def get_run_unit(run_id: str, unit_id: str) -> dict[str, Any]:
     except ports.IntegrationUnavailable:
         counterexamples = []
 
+    try:
+        verifications = await ports.list_verifications(run_id, unit_id)
+    except ports.IntegrationUnavailable:
+        verifications = []
+
+    plain_counterexamples = [
+        c if isinstance(c, dict) else c.model_dump() for c in counterexamples
+    ]
+    # Which held-out cases the reviewer may see in full: the ones repair already
+    # exposed. A held-out case that passed has no counterexample and stays sealed.
+    exposed = {
+        c.get("case_id") for c in plain_counterexamples if c.get("exposed_to_model")
+    }
+
     return {
         "unit": unit.model_dump(),
-        "verifications": [],  # Dev 4 owns verification_results; read when it lands
-        "counterexamples": [
-            _redact_held_out(c if isinstance(c, dict) else c.model_dump())
-            for c in counterexamples
+        "verifications": [
+            _redact_comparisons(
+                v if isinstance(v, dict) else v.model_dump(mode="json"), exposed
+            )
+            for v in verifications
         ],
+        "counterexamples": [_redact_held_out(c) for c in plain_counterexamples],
     }
 
 
@@ -147,6 +163,50 @@ def _redact_held_out(counterexample: dict[str, Any]) -> dict[str, Any]:
             redacted[field] = REDACTED_HELD_OUT
     redacted["redacted"] = True
     return redacted
+
+
+def _redact_comparisons(
+    verification: dict[str, Any], exposed: set[str | None]
+) -> dict[str, Any]:
+    """Same rule as the counterexamples, applied to each case comparison.
+
+    The Diff screen needs the per-case old and new outputs, which live only here
+    (backend issue 12). A held-out comparison carries the expected value of a sealed
+    case, so showing it would do exactly what the held-out suite exists to prevent -
+    and the UI is a read path like any other. The verdict stays visible either way: a
+    reviewer may see *that* a held-out case failed without seeing what it expected.
+    """
+    comparisons = verification.get("comparisons")
+    if not isinstance(comparisons, list):
+        return verification
+
+    redacted: list[dict[str, Any]] = []
+    for comparison in comparisons:
+        if not isinstance(comparison, dict):
+            continue
+        if (comparison.get("visibility") != "held_out"
+                or comparison.get("case_id") in exposed):
+            redacted.append(comparison)
+            continue
+
+        sealed = dict(comparison)
+        for side in ("old", "new"):
+            outcome = sealed.get(side)
+            if isinstance(outcome, dict):
+                # Keep the shape and the status; drop what the case expected.
+                sealed[side] = {
+                    **outcome,
+                    "value": REDACTED_HELD_OUT,
+                    "exception_message": (
+                        REDACTED_HELD_OUT if outcome.get("exception_message") else None
+                    ),
+                }
+            elif outcome is not None:
+                sealed[side] = REDACTED_HELD_OUT
+        sealed["redacted"] = True
+        redacted.append(sealed)
+
+    return {**verification, "comparisons": redacted}
 
 
 @router.get("/runs/{run_id}/diff")

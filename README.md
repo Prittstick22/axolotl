@@ -68,6 +68,8 @@ docker build -f runner/Dockerfile.behaviour --build-arg PYTHON_IMAGE=python:2.7.
 docker build -f runner/Dockerfile.behaviour --build-arg PYTHON_IMAGE=python:3.14-slim  -t axolotl-chess-cases:py314 runner/
 ```
 
+**Run these again after pulling.** The runner changed in [#98](https://github.com/Prittstick22/axolotl/issues/98) and [#100](https://github.com/Prittstick22/axolotl/issues/100), and a stale image does not announce itself — it fails the runner check, which reads like a broken Docker setup rather than an old build.
+
 `axolotl-runner:latest` is the 3.12 image `legacy_orders` runs on; the `py2.7` and
 `py3.14` pair is what a Python 2 migration needs, one for the baseline and one for the
 candidate ([#22](https://github.com/Prittstick22/axolotl/issues/22)).
@@ -75,11 +77,14 @@ candidate ([#22](https://github.com/Prittstick22/axolotl/issues/22)).
 Open <http://localhost:5173>. The status chips show the **real** state of MongoDB, the
 Atlas search indexes, the sandbox runner and Gemini.
 
-**Then import the demo.** On *New migration*, choose **Upload a folder** and pick
-`demo/chess` from this repository. It is recognised as the trusted chess fixture by an
-exact content match, which is what makes it executable — a modified copy is imported
-for reading only ([#21](https://github.com/Prittstick22/axolotl/issues/21)). Choose
-**Python 2 to Python 3** as the target, the label the Plan screen shows.
+**Then import the demo.** On *New migration*, **Demo fixture: `chess`** is already
+selected — it ships in the repository and runs from any laptop ([#92](https://github.com/Prittstick22/axolotl/issues/92)), so there is
+nothing to upload. Choose **Python 2 to Python 3** as the target, the label the Plan
+screen shows.
+
+*Uploading `demo/chess` as a folder also works: an exact content match is recognised
+as the trusted fixture, which is what makes it executable, and a modified copy is
+imported for reading only ([#21](https://github.com/Prittstick22/axolotl/issues/21)). The built-in option is the one to demo.*
 
 **With an empty `.env` every chip reads `unavailable`. That is the honest answer, not a
 failure of the app** — nothing here fakes a working dependency.
@@ -199,17 +204,17 @@ the gotchas behind them.
 | Scheduler, state machine, event journal, plans, controller, run worker, reports | ✅ |
 | All 15 of Dev 2's §6 endpoints | ✅ registered |
 | Demo fixture + sandbox runner | ✅ proven in a container |
-| All 8 frontend screens | ✅ *(Dev 5)* — Overview, Graph, Module inspector, New migration, Plan, Run, Verification, Report |
+| All 9 frontend screens | ✅ *(Dev 5)* — Overview, Graph, Module inspector, New migration, Plan, Run, Verification, Report, Search |
 | Import, AST, dependency graph | ✅ *(Dev 3)* |
 | Atlas collections and indexes, created from code | ✅ *(Dev 3)* |
 | Keyword, vector and native `$rankFusion` hybrid search | ✅ *(Dev 3)* |
 | Workspaces, patches, differential verifier | ✅ *(Dev 4)* |
 | Agent adapter, prompts, tools | ✅ *(Dev 1)* — `propose_plan`, `run_unit_session`, `narrate_report`, all three against `gemini-4-argon` |
 | Chess (Python 2.7 → 3.14) can be planned and verified | ✅ — dual-runtime sandbox ([#22](https://github.com/Prittstick22/axolotl/issues/22)), chess behaviour cases ([#23](https://github.com/Prittstick22/axolotl/issues/23)), `python2_to_3` supported ([#21](https://github.com/Prittstick22/axolotl/issues/21)) |
-| A chess run that reaches a verdict | ⬜ — **nothing has run end to end yet**, [#4](https://github.com/Prittstick22/axolotl/issues/4) and [#7](https://github.com/Prittstick22/axolotl/issues/7). This is the gap between here and the demo |
+| A chess run that reaches a verdict | ✅ — `run_70e126c3acf2`, 24 Oct: `completed` across 14 units against `gemini-4-argon` ([#4](https://github.com/Prittstick22/axolotl/issues/4)). Recorded for replay on `demo/argon-replay`, so a laptop with no Gemini key can still show it |
 
-778 offline backend tests, 25 in real sandbox containers, 56 live tests against the
-real Atlas cluster and Gemini behind `-m live`, and 16 frontend tests. A plain
+827 offline backend tests, 25 in real sandbox containers, 56 live tests against the
+real Atlas cluster and Gemini behind `-m live`, and 20 frontend tests. A plain
 `uv run pytest` excludes the live ones, because one live run costs about 48 Gemini
 embedding calls against a 1000-a-day free tier. CI runs the offline, container and
 frontend suites on every pull request.
@@ -268,9 +273,9 @@ equivalence, and every report says so in those words.
 ## Architecture
 
 ```
-            ┌────────── React 19 + Vite (8 screens) ──────────┐
+            ┌────────── React 19 + Vite (9 screens) ──────────┐
             │  Overview · Graph · Module · New migration       │
-            │  Plan · Run · Verification · Report              │
+            │  Plan · Run · Verification · Report · Search     │
             └───────────────────────┬─────────────────────────┘
                                     │  26 REST endpoints, /api/v1
             ┌───────────────────────▼─────────────────────────┐
@@ -366,21 +371,23 @@ Dev 4's fuller treatment is [`docs/safety-and-limitations.md`](docs/safety-and-l
   undetected, and the report says so.
 - Held-out cases are the independent half of the suite. They are never shown to the
   model unless a repair exposes one deliberately, and never leak through a read path:
-  comparisons, counterexamples and gate logs are all redacted for a sealed case.
+  comparisons, counterexamples, gate logs and the event journal are all redacted for
+  a sealed case.
 - An inconclusive gate is never a pass. If the sandbox cannot run, the result is
   inconclusive, not success.
-- `legacy_orders` has 26 behaviour cases. **Chess has none yet** ([#23](https://github.com/Prittstick22/axolotl/issues/23)), so chess cannot be verified
-  today, only imported and inspected.
+- `legacy_orders` has 26 behaviour cases, 16 visible and 10 held out. Chess has 24,
+  12 and 12, routed per fixture ([#23](https://github.com/Prittstick22/axolotl/issues/23)). Chess has been verified end to end
+  once (`run_70e126c3acf2`); `legacy_orders` is exercised by the test and sandbox
+  suites rather than by a full run.
 
 ## Known issues and failures
 
 | | |
 |---|---|
-| **No chess run has reached a verdict yet** | every piece is in place and none of it has been run together on chess. This is the honest headline gap ([#4](https://github.com/Prittstick22/axolotl/issues/4), [#7](https://github.com/Prittstick22/axolotl/issues/7)) |
+| **No cold-start reproduction yet** | a live chess run reached a verdict on 24 Oct, but nobody has yet started from a fresh clone with only this README and reproduced it. That is the remaining honest gap ([#7](https://github.com/Prittstick22/axolotl/issues/7)) |
 | Free-tier Gemini quota | 1000 embedding calls a day; one live test run is about 48, and a debugging session spent a whole key on 23 Oct. A plain `uv run pytest` excludes the live suite for that reason |
 | Snapshots are machine-local | a repository imported on one laptop cannot be re-indexed on another; the endpoint says so with 409 `SNAPSHOT_UNAVAILABLE`, so whoever demos must be whoever imported |
 | Report runtime timings are conditional | `performance` is filled ([#46](https://github.com/Prittstick22/axolotl/issues/46)) only for a completed `trusted_docker` run whose final verification passed on the accepted revision; otherwise `null`, and the Report leaves the panel out rather than showing zeroes |
-| The Search screen is a placeholder | the API is live and tested; the screen is not built |
 | `legacy_orders` is a test fixture, not a demo | it is what the backend tests and the sandbox run on. The demo is chess |
 
 ## Credits

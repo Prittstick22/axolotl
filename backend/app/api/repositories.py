@@ -25,7 +25,7 @@ from pydantic import BaseModel
 from app import graph as graph_service
 from app import ingestion
 from app.errors import VALIDATION_ERROR, AppError
-from app.ingestion.safety import MAX_EXTRACTED_BYTES
+from app.ingestion.safety import MAX_ARCHIVE_BYTES, MAX_EXTRACTED_BYTES
 from app.models.contracts import GraphPayload, ModuleDetail, RepositoryRecord
 from app.persistence.routing import DatabaseAwareRoute
 
@@ -86,7 +86,7 @@ async def import_repository(
         # checks work on a real file rather than a stream we have already buffered.
         with tempfile.TemporaryDirectory(prefix="axolotl-upload-") as tmp:
             upload = Path(tmp) / (Path(file.filename or "upload.zip").name)
-            upload.write_bytes(await file.read())
+            await _spool_zip(file, upload)
             return await ingestion.import_repository(
                 zip_path=upload, name=name or upload.stem
             )
@@ -94,6 +94,25 @@ async def import_repository(
     return await ingestion.import_repository(
         demo_fixture_id=demo_fixture_id, name=name
     )
+
+
+async def _spool_zip(file: UploadFile, destination: Path) -> None:
+    """Copy an upload to disk a megabyte at a time, stopping at the archive limit.
+
+    The same 422 as `_extract_zip` gives, but raised before the rest of an oversized
+    body is copied into memory.
+    """
+    remaining = MAX_ARCHIVE_BYTES
+    with destination.open("wb") as out:
+        while chunk := await file.read(1024 * 1024):
+            remaining -= len(chunk)
+            if remaining < 0:
+                raise AppError(
+                    VALIDATION_ERROR,
+                    f"Archive is larger than {MAX_ARCHIVE_BYTES // (1024 * 1024)} MB",
+                    status_code=422,
+                )
+            out.write(chunk)
 
 
 async def _read_folder(

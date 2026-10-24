@@ -22,6 +22,9 @@ RATE_LIMIT_WAIT_SECONDS = 90
 RATE_LIMIT_BACKOFF_SECONDS = (2, 4, 8, 16, 32)  # when a 429 names no delay
 RETRY_DELAY_MARGIN_SECONDS = 1                 # retryDelay is a minimum, not a promise
 DROPPED_CONNECTION_RETRIES = 1
+# The model is busy or briefly down: "503 UNAVAILABLE - high demand". Backed off like
+# a 429 that names no delay, within the same budget (#97). Same set as search/retry.py.
+SERVER_ERROR_STATUSES = (500, 502, 503, 504)
 
 
 class ModelUnavailable(RuntimeError):
@@ -179,8 +182,8 @@ class GeminiClient:
                 raise
             except Exception as exc:
                 status = _status(exc)
-                if status == 429:
-                    asked = retry_delay_seconds(exc)
+                if status == 429 or status in SERVER_ERROR_STATUSES:
+                    asked = retry_delay_seconds(exc) if status == 429 else None
                     if asked is not None and asked > RATE_LIMIT_WAIT_SECONDS:
                         raise ModelUnavailable(
                             f"Gemini quota exhausted for {self.model}: the API asks to wait "
@@ -193,8 +196,9 @@ class GeminiClient:
                         ]
                     )
                     if waited + delay > RATE_LIMIT_WAIT_SECONDS:
+                        still = "rate-limited" if status == 429 else f"failing ({status})"
                         raise ModelUnavailable(
-                            f"Gemini still rate-limited for {self.model} after waiting "
+                            f"Gemini still {still} for {self.model} after waiting "
                             f"{_human(waited)}"
                         ) from exc
                     rate_limited += 1

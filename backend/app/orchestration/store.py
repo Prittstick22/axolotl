@@ -10,6 +10,7 @@ DATABASE_UNAVAILABLE and every caller fails honestly (§9).
 from __future__ import annotations
 
 import logging
+import socket
 from datetime import UTC, datetime
 from typing import Any
 
@@ -30,6 +31,9 @@ RUNS = "migration_runs"
 ARTEFACTS = "artefacts"
 
 INTERRUPTED = "interrupted by server restart"
+
+# The machine whose process runs a run (#93).
+HOST = socket.gethostname()
 
 
 def utcnow() -> datetime:
@@ -91,8 +95,10 @@ async def supersede_open_plans(repo_id: str, except_plan_id: str) -> int:
 async def save_run(run: RunSummary) -> RunSummary:
     database = await db.get_db()
     run.updated_at = utcnow()
+    # `host` lives on the document only, not on RunSummary: it names the machine,
+    # and no client needs it (#93).
     await database[RUNS].replace_one(
-        {"run_id": run.run_id}, run.model_dump(), upsert=True
+        {"run_id": run.run_id}, {**run.model_dump(), "host": HOST}, upsert=True
     )
     return run
 
@@ -115,19 +121,28 @@ async def list_runs(limit: int = 50) -> list[RunSummary]:
 
 
 async def list_unfinished_runs() -> list[RunSummary]:
-    """Runs that are not in a terminal state. On startup, these did not survive.
+    """This host's runs that are not in a terminal state. On startup, these did not
+    survive.
 
     Only the query lives here. `worker.mark_interrupted_runs` ends them, because
     ending a run means moving its units and journalling why, and the worker is where
     both of those already happen - once, for cancellation and interruption alike
     (#17). A bulk `update_many` here would be a second way to end a run, free to
     disagree with the first.
+
+    **Only this host's** (#93). The team shares one cluster, and a run lives in the
+    process that started it, so a restart here says nothing about a teammate's run -
+    the same rule `search/progress.py` follows for indexing. A run saved before #93
+    has no host and is still treated as this host's, as it always was.
     """
     database = await db.get_db()
     cursor = database[RUNS].find(
         {"state": {"$nin": sorted(TERMINAL_RUN_STATES)}}, {"_id": 0}
     ).sort("created_at", 1)
-    return [RunSummary(**document) async for document in cursor]
+    return [
+        RunSummary(**document) async for document in cursor
+        if document.get("host") in (HOST, None)
+    ]
 
 
 # --------------------------------------------------------------------------

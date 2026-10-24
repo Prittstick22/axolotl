@@ -18,6 +18,7 @@ from app.errors import (
     PLAN_NOT_APPROVED,
     RUN_ALREADY_ACTIVE,
     RUN_ALREADY_FINISHED,
+    RUNNER_UNAVAILABLE,
     AppError,
 )
 from app.models.contracts import (
@@ -48,6 +49,8 @@ _tasks: dict[str, asyncio.Task] = {}
 _cancelled: set[str] = set()
 # run_id -> {(unit_id, gate): (passed, failed, inconclusive)}; cleared when a run ends.
 _GATE_TOTALS: dict[str, dict[tuple[str | None, str], tuple[int, int, int]]] = {}
+# ponytail: one lock for every start in this process; runs are per-process anyway.
+_START_LOCK = asyncio.Lock()
 
 
 # --------------------------------------------------------------------------
@@ -73,46 +76,50 @@ async def start_run(plan_id: str) -> RunSummary:
     # sets of accepted revisions from one snapshot. Scoped to the repository rather
     # than the plan because a second plan on the same repository is the same hazard,
     # and `supersede_open_plans` already treats a repository as having one live plan.
-    active = [
-        r for r in await store.list_unfinished_runs()
-        if r.repository_id == plan.repository_id
-    ]
-    if active:
-        raise AppError(
-            RUN_ALREADY_ACTIVE,
-            f"Run {active[0].run_id} is still active for this repository; "
-            f"wait for it to finish or cancel it",
-            status_code=409,
-            details={"repository_id": plan.repository_id,
-                     "active_run_id": active[0].run_id,
-                     "state": active[0].state},
-        )
+    #
+    # Under a lock, up to the first save (#99): the check and the save are separated
+    # by awaits, and a second request arriving in between found no run and passed.
+    async with _START_LOCK:
+        active = [
+            r for r in await store.list_unfinished_runs()
+            if r.repository_id == plan.repository_id
+        ]
+        if active:
+            raise AppError(
+                RUN_ALREADY_ACTIVE,
+                f"Run {active[0].run_id} is still active for this repository; "
+                f"wait for it to finish or cancel it",
+                status_code=409,
+                details={"repository_id": plan.repository_id,
+                         "active_run_id": active[0].run_id,
+                         "state": active[0].state},
+            )
 
-    runner = await _runner_mode()
-    run = RunSummary(
-        run_id=new_run_id(),
-        plan_id=plan.plan_id,
-        repository_id=plan.repository_id,
-        state="queued",
-        current_unit=None,
-        units=[
-            UnitRunState(unit_id=u.unit_id, module_ids=u.module_ids, status="queued")
-            for u in plan.units
-        ],
-        units_total=len(plan.units),
-        units_verified=0,
-        units_blocked=0,
-        tests_passed=0,
-        tests_failed=0,
-        tests_inconclusive=0,
-        last_event_sequence=0,
-        model=settings.gemini_model,
-        runner_mode=runner,
-        max_patch_attempts=settings.max_patch_attempts,
-        created_at=store.utcnow(),
-        updated_at=store.utcnow(),
-    )
-    await _save(run)
+        runner = await _runner_mode(plan)
+        run = RunSummary(
+            run_id=new_run_id(),
+            plan_id=plan.plan_id,
+            repository_id=plan.repository_id,
+            state="queued",
+            current_unit=None,
+            units=[
+                UnitRunState(unit_id=u.unit_id, module_ids=u.module_ids, status="queued")
+                for u in plan.units
+            ],
+            units_total=len(plan.units),
+            units_verified=0,
+            units_blocked=0,
+            tests_passed=0,
+            tests_failed=0,
+            tests_inconclusive=0,
+            last_event_sequence=0,
+            model=settings.gemini_model,
+            runner_mode=runner,
+            max_patch_attempts=settings.max_patch_attempts,
+            created_at=store.utcnow(),
+            updated_at=store.utcnow(),
+        )
+        await _save(run)
 
     await events.append_event(
         run.run_id, "run_created",
@@ -181,12 +188,31 @@ async def mark_interrupted_runs() -> list[str]:
     return interrupted
 
 
-async def _runner_mode() -> str:
+async def _runner_mode(plan: MigrationPlan) -> str:
+    """The run's runner mode, after checking both images its target needs (#95).
+
+    Only the 3.12 image used to be checked. With the 3.14 candidate image missing,
+    every unit spent Argon calls on a patch that `verify_unit` then could not run.
+    A missing baseline image would fail the run at the baseline anyway, so refusing
+    here only says so sooner, and says which image to build.
+    """
     try:
-        status = await ports.runner_status()
-        return str(status.get("mode", "disabled"))
+        pair = ports.runtimes_for_target(plan.target_id)
+        statuses = [await ports.runner_status(pair.baseline),
+                    await ports.runner_status(pair.candidate)]
     except ports.IntegrationUnavailable:
         return "disabled"
+
+    missing = [s for s in statuses if not s.get("available")]
+    if missing:
+        reasons = "; ".join(dict.fromkeys(str(s.get("detail")) for s in missing))
+        raise AppError(
+            RUNNER_UNAVAILABLE,
+            f"The sandbox runner can't run this plan's target yet: {reasons}",
+            status_code=503,
+            details={"target_id": plan.target_id},
+        )
+    return str(statuses[0].get("mode", "disabled"))
 
 
 # --------------------------------------------------------------------------
@@ -285,6 +311,15 @@ async def _execute(run_id: str, plan: MigrationPlan) -> None:
         except ports.IntegrationUnavailable as exc:
             # No baseline means no oracle, so nothing downstream can be verified.
             await _fail(run, f"cannot capture a baseline: {exc}")
+            return
+        if summary.cases_captured == 0:
+            # The same, after the fact (#96): every unit would spend Argon calls on a
+            # patch with nothing to be compared against.
+            await _fail(run, (
+                "the baseline captured no behaviour cases "
+                f"({summary.cases_failed_to_capture} failed to capture), so nothing "
+                "can be verified against it"
+            ))
             return
 
         # --- per unit, dependency first ------------------------------------
@@ -544,9 +579,10 @@ async def _final_verification(
         )
         return None
 
+    held_out = {c.case_id for c in result.comparisons if c.visibility == "held_out"}
     for gate in result.gates:
         await events.append_event(
-            run.run_id, "gate_result", payload=gate.model_dump()
+            run.run_id, "gate_result", payload=events.gate_payload(gate, held_out)
         )
 
     # Final-verification counterexamples were never journalled, so the report

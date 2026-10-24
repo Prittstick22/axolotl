@@ -77,7 +77,7 @@ export default function Overview() {
             {/* An upload is executable only as an exact copy of a trusted tree, which also sets demo_fixture_id (#21). */}
             <Field label="Origin">
               {r.origin === 'demo_fixture'
-                ? 'Demo fixture, trusted'
+                ? `${r.demo_fixture_id === 'chess' ? 'Demo' : 'Test'} fixture, trusted`
                 : `${r.origin === 'folder_upload' ? 'Folder' : 'ZIP'} upload, ${r.executable ? `exact copy of the trusted ${r.demo_fixture_id} source` : 'static analysis only'}`}
             </Field>
             <Field label="Snapshot">

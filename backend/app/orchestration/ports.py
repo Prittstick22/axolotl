@@ -105,9 +105,15 @@ def files_by_module(graph) -> dict[str, str]:
 # Dev 4 - sandbox and verification
 # --------------------------------------------------------------------------
 
-async def runner_status() -> dict[str, Any]:
-    """-> {mode, available, image_digest}. Dev 4's stub already answers honestly."""
-    return await _resolve("app.sandbox", "runner_status", "Dev 4")()
+async def runner_status(runtime=None) -> dict[str, Any]:
+    """-> {mode, available, image_digest, detail} for one runtime's image; the 3.12
+    image when `runtime` is None."""
+    return await _resolve("app.sandbox", "runner_status", "Dev 4")(runtime)
+
+
+def runtimes_for_target(target_id: str):
+    """-> RuntimePair (baseline, candidate) the target's run uses (#22)."""
+    return _resolve("app.sandbox.runtimes", "for_target", "Dev 4")(target_id)
 
 
 async def capture_baseline(run_id: str, repo_id: str, units: list):

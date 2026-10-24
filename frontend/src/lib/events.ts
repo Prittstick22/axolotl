@@ -136,7 +136,7 @@ export function eventRows(log: RunEvent[], name: (id: string) => string) {
           const errors = list(field(result?.result_excerpt, 'errors'));
           row.text = str(field(p.args_excerpt, 'summary')) || unit;
           row.detail = [
-            { label: 'Rationale, written by Argon', text: str(field(p.args_excerpt, 'rationale')) },
+            { label: 'Rationale', text: str(field(p.args_excerpt, 'rationale')) },
             {
               label: 'Result',
               text: !result ? 'Waiting for the result.' : accepted === false ? `Rejected. ${errors.join(' ')}` : 'Accepted and applied to the workspace.',
@@ -149,7 +149,7 @@ export function eventRows(log: RunEvent[], name: (id: string) => string) {
           // Argon's reason can claim success; the verifier's answer sits next to it.
           const verified = field(result?.result_excerpt, 'verified');
           row.text = ids(str(field(p.args_excerpt, 'reason'))) || unit;
-          row.detail = [{ label: 'Reason, written by Argon', text: row.text }];
+          row.detail = [{ label: 'Reason', text: row.text }];
           if (verified === false) row.detail.push({ label: 'Verifier', text: `Not verified: no verification of ${unit} passed.` });
         }
         if (result?.ok === false) {

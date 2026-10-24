@@ -14,7 +14,7 @@ export function Choice({ name, value, checked, disabled, onPick, title, error, c
   onPick: (value: string) => void;
   title: ReactNode;
   error?: string;
-  children: ReactNode;
+  children?: ReactNode;
 }) {
   return (
     <div
@@ -47,7 +47,7 @@ export function Choice({ name, value, checked, disabled, onPick, title, error, c
               {error}
             </span>
           ) : null}
-          <span className="text-muted-foreground">{children}</span>
+          {children && <span className="text-muted-foreground">{children}</span>}
         </span>
       </label>
     </div>

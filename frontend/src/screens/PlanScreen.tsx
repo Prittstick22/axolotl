@@ -4,7 +4,7 @@ import { cn } from 'cn';
 import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
-import { approvePlan, createPlan, getPlan, getRuntime, listTargets, startRun } from '@/api/client';
+import { ApiError, approvePlan, createPlan, getPlan, getRuntime, listTargets, startRun } from '@/api/client';
 import { Choice } from '@/components/Choice';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { TONE_TEXT, TONE_TINT, type Tone } from '@/lib/status';
@@ -18,12 +18,27 @@ const PLAN_STATUS: Record<PlanStatus, [Icon, string, Tone]> = {
   rejected: [XCircleIcon, 'Rejected', 'failed'],
 };
 const time = (iso: string) => new Date(iso).toLocaleTimeString('en-GB');
+// Shorter wording on screen only. The API's description also goes into Argon's plan and migrate prompts, so it stays.
+const shown = (description: string) => description.replace('Legacy-style Python 3 to modern typed ', 'Convert to ');
+
+// 409 from Create plan or Start migration when the code was imported on another computer (#84): it's not the target's fault.
+const elsewhere = (e: Error | null) => e instanceof ApiError && e.code === 'SNAPSHOT_UNAVAILABLE';
 
 function Failure({ error }: { error: Error | null }) {
   return error ? (
-    <span role="alert" className="flex items-center gap-1 text-sm font-medium text-failed">
-      <XCircleIcon size={16} aria-hidden className="flex-none" />
-      {error.message}
+    <span role="alert" className="flex items-start gap-1 text-sm font-medium text-failed">
+      <XCircleIcon size={16} aria-hidden className="mt-0.5 flex-none" />
+      <span>
+        {error.message}
+        {elsewhere(error) && (
+          <>
+            {' '}
+            <Link to="/" className="whitespace-nowrap text-foreground underline underline-offset-4">
+              Import it on this computer
+            </Link>
+          </>
+        )}
+      </span>
     </span>
   ) : null;
 }
@@ -116,7 +131,7 @@ function Plan({ plan, runLink, onStart, starting, startError }: {
 
       <div className="flex flex-col border-t md:flex-row">
         <div className="flex flex-1 flex-col gap-2 px-4 py-3 md:border-r">
-          <span className="text-sm font-medium text-muted-foreground">{plan.interaction_id ? 'Rationale, written by Argon' : 'Rationale'}</span>
+          <span className="text-sm font-medium text-muted-foreground">Rationale</span>
           <p className="max-w-[60ch] whitespace-pre-line">{plan.rationale}</p>
         </div>
         <div className="flex flex-1 flex-col gap-2 px-4 py-3 max-md:border-t">
@@ -188,6 +203,7 @@ export default function PlanScreen() {
             {targetPython && ` → Python ${targetPython} (target)`}
           </p>
         )}
+        {elsewhere(create.error) && <Failure error={create.error} />}
         {targets.isError && <p className="text-sm text-muted-foreground">Couldn’t load the targets: {targets.error.message}</p>}
         <fieldset className="flex flex-col gap-2" disabled={create.isPending}>
           <legend className="sr-only">Migration target</legend>
@@ -203,9 +219,9 @@ export default function PlanScreen() {
                 create.reset();
               }}
               title={t.label}
-              error={create.isError && target === t.target_id ? create.error.message : undefined}
+              error={create.isError && target === t.target_id && !elsewhere(create.error) ? create.error.message : undefined}
             >
-              <span className="block text-sm">{t.supported ? t.description : t.unsupported_reason}</span>
+              {t.supported ? <span className="block text-sm">{shown(t.description)}</span> : null}
             </Choice>
           ))}
         </fieldset>
@@ -239,7 +255,7 @@ export default function PlanScreen() {
               ? plan.error.message
               : create.isPending
                 ? 'This can take a minute. The plan appears here when Argon returns it.'
-                : 'Pick a target and create a plan. Argon orders the units so dependencies migrate before the modules that import them.'}
+                : 'Pick a target and create a plan.'}
           </p>
         </section>
       )}

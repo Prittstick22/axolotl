@@ -609,3 +609,40 @@ async def test_a_case_is_still_exposed_while_a_repair_is_possible(
 
     assert ctrl.patch_attempts_remaining() > 0
     assert summary["exposed_case_ids"] == ["hcase_001"]
+
+
+# --------------------------------------------------------------------------
+# #94: the journal never stores held-out case outputs
+# --------------------------------------------------------------------------
+
+async def test_a_gate_result_event_withholds_held_out_case_outputs(
+    recorder, sandbox, monkeypatch
+):
+    """`GET /runs/{id}/events` serves the journal as stored, so a harness log that
+    reaches it reaches the browser and the report narrative."""
+    harness_log = '{"case_id": "case_hidden", "value": 42}'
+    verification = make_verification(
+        passed=False, comparisons=[comparison("case_hidden", "held_out", "mismatch")]
+    )
+    verification.gates = [
+        GateResult(gate="differential", status="failed", summary="d",
+                   log_excerpt=harness_log),
+        GateResult(gate="existing_tests", status="failed", summary="t",
+                   log_excerpt="AssertionError in case_hidden: 42 != 41"),
+        GateResult(gate="compile", status="passed", summary="c",
+                   log_excerpt="compiled 1 file"),
+    ]
+
+    async def verify_unit(*args, **kwargs):
+        return verification
+
+    monkeypatch.setattr(ports_module, "verify_unit", verify_unit)
+
+    ctrl = UnitControllerImpl("run_1", UNIT, [], max_patch_attempts=3)
+    await ctrl.submit_patch(make_patch())
+    await ctrl.run_verification()
+
+    logs = {p["gate"]: p["log_excerpt"] for t, p in recorder.events if t == "gate_result"}
+    assert logs["differential"] == events_module.WITHHELD_LOG
+    assert logs["existing_tests"] == events_module.WITHHELD_LOG
+    assert logs["compile"] == "compiled 1 file"

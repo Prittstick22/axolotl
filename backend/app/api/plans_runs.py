@@ -209,10 +209,11 @@ def _redact_comparisons(
     return {**verification, "comparisons": redacted}
 
 
-# These gates' log is the harness's raw output: one JSON outcome per case, held-out
-# cases included, so it carries the very values `_redact_comparisons` removes.
-HARNESS_GATES = {"differential", "impacted_tests"}
-WITHHELD_LOG = "case outputs withheld: they include held-out cases. See comparisons."
+# `HARNESS_GATES`: these gates' log is the harness's raw output, held-out cases
+# included, so it carries the very values `_redact_comparisons` removes. Shared with
+# the event journal, which withholds the same logs (#94).
+HARNESS_GATES = events.HARNESS_GATES
+WITHHELD_LOG = events.WITHHELD_LOG
 
 
 def _withhold_harness_logs(verification: dict[str, Any]) -> dict[str, Any]:

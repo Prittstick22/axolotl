@@ -103,6 +103,7 @@ class World:
         self.agent_mode = "normal"
         self.cancel_after_baseline = False
         self.cancel_during_final = False
+        self.missing_images: set[str] = set()   # Python versions with no image (#95)
 
     # -- store -----------------------------------------------------------
     async def get_plan(self, plan_id):
@@ -181,7 +182,11 @@ class World:
                 if unit_id is None or e["unit_id"] == unit_id]
 
     # -- ports -----------------------------------------------------------
-    async def runner_status(self):
+    async def runner_status(self, runtime=None):
+        python = runtime.python if runtime is not None else "3.12"
+        if python in self.missing_images:
+            return {"mode": "disabled", "available": False,
+                    "detail": f"image for Python {python} not found"}
         return {"mode": "trusted_docker", "available": True, "image_digest": "sha256:x"}
 
     async def capture_baseline(self, run_id, repo_id, units):
@@ -491,6 +496,24 @@ async def test_no_baseline_means_the_run_fails_rather_than_proceeding(world):
 
     assert run.state == "failed"
     assert "baseline" in (run.error or "")
+    assert world.migrated_order == []
+
+
+async def test_a_baseline_that_captured_nothing_fails_the_run(world, monkeypatch):
+    """#96: every case failed to capture, so there is no oracle either. The run used
+    to carry on and spend Argon calls on every unit."""
+    capture = world.capture_baseline
+
+    async def capture_nothing(run_id, repo_id, units):
+        summary = await capture(run_id, repo_id, units)
+        return summary.model_copy(update={"cases_captured": 0,
+                                          "cases_failed_to_capture": 26})
+
+    monkeypatch.setattr(ports_module, "capture_baseline", capture_nothing)
+    run = await run_to_completion(world)
+
+    assert run.state == "failed"
+    assert "captured no behaviour cases (26 failed" in (run.error or "")
     assert world.migrated_order == []
 
 
@@ -1019,6 +1042,50 @@ async def test_a_second_run_on_the_same_repository_is_refused(world):
     assert caught.value.details["active_run_id"] == first.run_id
 
     task = worker_module._tasks.get(first.run_id)
+    if task is not None:
+        await task
+
+
+async def test_a_run_whose_candidate_image_is_missing_is_refused_before_it_starts(world):
+    """#95: only the 3.12 image used to be checked, so a chess run started and every
+    unit spent Argon calls on a 3.14 candidate nothing could verify."""
+    world.plan.target_id = "python2_to_3"
+    world.missing_images = {"3.14"}
+
+    with pytest.raises(AppError) as caught:
+        await worker_module.start_run("plan_test000001")
+
+    assert caught.value.status_code == 503
+    assert caught.value.code == "RUNNER_UNAVAILABLE"
+    assert "Python 3.14" in caught.value.message
+    assert world.runs == {}, "a run was created anyway"
+
+
+async def test_two_concurrent_starts_create_one_run(world, monkeypatch):
+    """#99: the check and the save were separated by awaits (the runner check is a
+    `docker version` call), so a second click arriving in between passed too."""
+    import asyncio
+
+    runner_status = world.runner_status
+
+    async def slow_runner_status(*args):
+        await asyncio.sleep(0.01)
+        return await runner_status(*args)
+
+    monkeypatch.setattr(ports_module, "runner_status", slow_runner_status)
+
+    results = await asyncio.gather(
+        worker_module.start_run("plan_test000001"),
+        worker_module.start_run("plan_test000001"),
+        return_exceptions=True,
+    )
+
+    started = [r for r in results if not isinstance(r, Exception)]
+    refused = [r for r in results if isinstance(r, AppError)]
+    assert len(started) == 1 and len(world.runs) == 1
+    assert [r.code for r in refused] == ["RUN_ALREADY_ACTIVE"]
+
+    task = worker_module._tasks.get(started[0].run_id)
     if task is not None:
         await task
 

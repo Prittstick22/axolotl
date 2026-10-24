@@ -64,6 +64,10 @@ Liveness only, no dependency checks. Always `200 {"status": "ok"}`.
 `code_chunks`. `gemini.reachable` is a real `models.get`, cached per process so polling
 does not burn quota. `details` is additive and safe to ignore.
 
+`runner.available` is true only when every interpreter image a target can need exists
+(3.12, 2.7 and 3.14), and `details.runner` names the missing ones (#95). `runner.mode`
+is the 3.12 image's.
+
 **With an empty `.env` every value is honestly `unavailable`. That is correct, not a bug.**
 
 ---
@@ -168,6 +172,11 @@ twice and producing two competing sets of accepted revisions, and a second plan 
 same repository does that just as well as a second click on one plan. Cancel the active
 run, or wait for it; a repository can be migrated again once its run has finished.
 
+503 `RUNNER_UNAVAILABLE` if the image for the plan's baseline or candidate interpreter
+can't run here (#95), checked before the run is created. The message names the
+missing image and how to build it. Chess (`python2_to_3`) needs `axolotl-runner:py2.7`
+and `axolotl-runner:py3.14`.
+
 The Plan screen already shows "View run" when the URL carries a run, so this closes the
 API side of the same hazard.
 
@@ -212,7 +221,7 @@ Written only through `events.append_event`. Payloads are redacted and capped at 
 | `patch_proposed` | `{files, summary, bytes}` |
 | `patch_applied` / `patch_rejected` | `{workspace_revision}` / `{errors}` |
 | `verification_started` | `{workspace_revision, scope}` |
-| `gate_result` | `GateResult` |
+| `gate_result` | `GateResult`. A harness gate's `log_excerpt`, or one that mentions a held-out case, is replaced with "case outputs withheld" (#94) |
 | `verification_passed` / `verification_failed` | `{verification_id, failed_case_ids, counterexample_ids}` |
 | `counterexample_recorded` | `{counterexample_id, case_id, visibility, ...}` |
 | `repair_started` | `{attempt, budget_remaining}` |

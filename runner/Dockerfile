@@ -36,8 +36,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # (the container runs with --network none).
 # The stdlib is precompiled at build time because nothing can write bytecode at run
 # time; sysconfig finds it on every interpreter instead of a hard-coded 3.12 path.
+# Only the precompile may fail: the brackets keep `|| true` from also hiding a failed
+# pytest install (#100), which would fail every existing_tests gate instead.
 RUN pip install --no-cache-dir "pytest==${PYTEST_VERSION}" \
-    && python -c "import compileall, sysconfig; compileall.compile_dir(sysconfig.get_paths()['stdlib'], quiet=1)" >/dev/null 2>&1 || true
+    && (python -c "import compileall, sysconfig; compileall.compile_dir(sysconfig.get_paths()['stdlib'], quiet=1)" >/dev/null 2>&1 || true)
 
 WORKDIR /
 

@@ -245,10 +245,12 @@ class UnitControllerImpl:
 
         self.latest_verification = result
 
+        held_out = {c.case_id for c in result.comparisons if c.visibility == "held_out"}
         for gate in result.gates:
             await events.append_event(
                 self.run_id, "gate_result", unit_id=self.unit.unit_id,
-                attempt=self.attempts_used, payload=gate.model_dump(),
+                attempt=self.attempts_used,
+                payload=events.gate_payload(gate, held_out),
             )
 
         failing_visible = [

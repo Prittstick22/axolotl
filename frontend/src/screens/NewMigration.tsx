@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button';
 import { readFolder } from '@/lib/folder';
 
 const FOLDER = 'folder';
+// The one demo, id fixed by #81. Any other built-in fixture, such as legacy_orders, is for tests.
+const DEMO = 'chess';
 const size = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.ceil(bytes / 1024)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
 
 /** 01 New migration: import the demo fixture or a folder. Errors are the API's own, on the choice they're about. */
@@ -18,7 +20,9 @@ export default function NewMigration() {
   const [picked, setPicked] = useState<string>();
   const [folder, setFolder] = useState<ReturnType<typeof readFolder>>();
   const [name, setName] = useState('');
-  const source = picked ?? fixtures.data?.[0]?.demo_fixture_id ?? FOLDER;
+  // The demo goes first, so it's the one picked by default.
+  const listed = fixtures.data && [...fixtures.data].sort((a, b) => Number(b.demo_fixture_id === DEMO) - Number(a.demo_fixture_id === DEMO));
+  const source = picked ?? listed?.[0]?.demo_fixture_id ?? FOLDER;
   const fixture = fixtures.data?.find((f) => f.demo_fixture_id === source);
 
   const run = useMutation({
@@ -48,7 +52,7 @@ export default function NewMigration() {
       <div className="flex items-start gap-2 rounded-md border bg-card px-4 py-3">
         <InfoIcon size={20} aria-hidden className="flex-none text-muted-foreground" />
         {/* backend/app/ingestion/trust.py: an upload can run only when every file exactly matches a trusted tree in the repo. */}
-        <span>Uploads are analysed statically and never run, unless the upload is an exact copy of a trusted demo project, such as chess. Only demo fixtures and those exact copies can be migrated.</span>
+        <span>Uploads are analysed statically and never run, unless the upload is an exact copy of a trusted demo project, such as chess. Only built-in fixtures and those exact copies can be migrated.</span>
       </div>
 
       <form
@@ -63,7 +67,7 @@ export default function NewMigration() {
           {fixtures.isError && (
             <p className="text-sm text-muted-foreground">Couldn’t load the demo fixtures: {fixtures.error.message}</p>
           )}
-          {fixtures.data?.map((f) => (
+          {listed?.map((f) => (
             <Choice
               key={f.demo_fixture_id}
               name="source"
@@ -71,10 +75,8 @@ export default function NewMigration() {
               checked={source === f.demo_fixture_id}
               onPick={pick}
               error={errorOn(f.demo_fixture_id)}
-              title={<>Demo fixture: <span className="font-mono text-sm">{f.name}</span></>}
-            >
-              {f.description} Trusted, so it can run in the sandbox.
-            </Choice>
+              title={<>{f.demo_fixture_id === DEMO ? 'Demo' : 'Test'} fixture: <span className="font-mono text-sm">{f.name}</span></>}
+            />
           ))}
           <Choice name="source" value={FOLDER} checked={source === FOLDER} onPick={pick} error={errorOn(FOLDER)} title="Upload a folder">
             Pick the project’s top folder. Up to 500 files and 50 MB. Static analysis only, unless it’s an exact copy of a trusted demo project.

@@ -62,6 +62,9 @@ SNAPSHOT_UNAVAILABLE = "SNAPSHOT_UNAVAILABLE"
 # client's wait, a dropped connection. Distinct from INTEGRATION_UNAVAILABLE, which
 # means the agent is not wired up at all (#47).
 MODEL_UNAVAILABLE = "MODEL_UNAVAILABLE"
+# An interpreter image the plan's target needs cannot run here (#95). Checked before
+# the run exists, so no Argon call is spent on a candidate nothing could verify.
+RUNNER_UNAVAILABLE = "RUNNER_UNAVAILABLE"
 
 
 def _envelope(code: str, message: str, details: dict[str, Any] | None = None) -> dict[str, Any]:

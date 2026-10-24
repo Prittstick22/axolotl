@@ -53,7 +53,7 @@ describe('eventRows', () => {
   });
 
   it('puts the verifier next to Argon’s reason', () => {
-    expect(rows[3].detail?.map((d) => d.label)).toEqual(['Reason, written by Argon', 'Verifier']);
+    expect(rows[3].detail?.map((d) => d.label)).toEqual(['Reason', 'Verifier']);
     expect(rows[1].detail?.at(-1)?.text).toBe('Accepted and applied to the workspace.');
   });
 

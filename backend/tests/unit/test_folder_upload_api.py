@@ -10,7 +10,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import ingestion
-from app.ingestion.safety import MAX_EXTRACTED_BYTES
+from app.api.repositories import _spool_zip
+from app.errors import AppError
+from app.ingestion.safety import MAX_ARCHIVE_BYTES, MAX_EXTRACTED_BYTES
 from app.main import create_app
 from app.models.contracts import RepositoryRecord
 
@@ -98,3 +100,29 @@ def test_a_zip_upload_keeps_its_project_name(client, received):
 
     assert response.status_code == 200, response.text
     assert received[0]["name"] == "my-project"
+
+
+def test_an_oversized_zip_is_refused_before_import(client, received):
+    response = client.post(
+        URL, files={"file": ("big.zip", b"x" * (MAX_ARCHIVE_BYTES + 1))}
+    )
+
+    assert response.status_code == 422
+    assert "larger than 10 MB" in response.text
+    assert received == []
+
+
+async def test_a_zip_upload_is_copied_in_bounded_chunks(tmp_path):
+    """An endless upload is cut off at the limit, not read whole."""
+    reads: list[int] = []
+
+    class Endless:
+        async def read(self, size: int = -1) -> bytes:
+            reads.append(size)
+            return b"x" * 1024 * 1024
+
+    with pytest.raises(AppError, match="larger than 10 MB"):
+        await _spool_zip(Endless(), tmp_path / "big.zip")  # type: ignore[arg-type]
+
+    assert all(size > 0 for size in reads)
+    assert len(reads) <= MAX_ARCHIVE_BYTES // (1024 * 1024) + 1

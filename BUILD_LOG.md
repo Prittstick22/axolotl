@@ -1886,3 +1886,29 @@ spent an Argon call on a run that then failed copying the baseline.
 
 836 offline backend tests (10 new; a mutation that drops the rebuild fails the rebuild
 test), ruff clean.
+
+## 24 Oct 2026 — Dev 2: the export is the project, not the patch (#40)
+
+People clicked a download labelled "Export migrated project" and got `migration.patch`.
+Two separate causes, both fixed here.
+
+- **The zip shipped the diff.** `write_export` looked up the recorded `patch` artefact
+  and copied it in as `axolotl/migration.patch`. It no longer does: the zip is the
+  project files, `axolotl/MIGRATION.md` and `axolotl/report.json`. The patch is
+  unchanged as its own artefact, still at `GET /artefacts/{id}/download`.
+- **MIGRATION.md promised it.** `migration_notes` took `with_patch` and, when true,
+  closed with "and `migration.patch` the diff from the imported code" — a file that is
+  now not in the zip. Nothing else passed the parameter, so it is gone rather than
+  threaded through as `False`.
+- **The Downloads panel offered four buttons**, three of them raw artefacts, so the
+  wrong one was easy to click. It now shows one: "Download migrated codebase (.zip)".
+  With nothing accepted it says so in words instead of rendering a button that 404s.
+  `listArtefacts` is untouched in the API client; this screen just stops calling it.
+
+The regression test keeps a recorded patch artefact in its setup on purpose, because a
+patch *existing* is what used to put it in the zip. Re-adding the file to `write_export`
+fails it with "the export is the project; the diff is its own artefact" rather than two
+truncated lists, which is why the named check runs before the namelist comparison.
+
+833 offline backend tests, ruff clean. Frontend: 25 tests, lint and build clean.
+Verified both panel states against a throwaway local API; no run was executed.

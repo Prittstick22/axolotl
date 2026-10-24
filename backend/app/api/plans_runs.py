@@ -25,6 +25,7 @@ from app.models.contracts import (
 )
 from app.orchestration import events, plans, ports, store, worker
 from app.persistence.routing import DatabaseAwareRoute
+from app.reports import artefacts
 from app.reports.builder import get_report
 
 # `route_class` turns a driver failure into 503 DATABASE_UNAVAILABLE instead of a bare
@@ -376,3 +377,46 @@ async def download_artefact(artefact_id: str) -> FileResponse:
             details={"artefact_id": artefact_id},
         )
     return FileResponse(path, filename=path.name)
+
+
+@router.get("/runs/{run_id}/export")
+async def export_run(run_id: str) -> FileResponse:
+    """#40: the migrated project as a ZIP. 404 until the report exists, or when no
+    unit was accepted and the project is still the legacy code."""
+    run = await store.get_run(run_id)
+    report = await get_report(run_id)
+    if report is None:
+        raise AppError(
+            REPORT_NOT_READY,
+            f"No report for {run_id} yet; the export is built from it",
+            status_code=404,
+            details={"run_id": run_id},
+        )
+    accepted = [
+        e for e in await events.list_all_events(run_id)
+        if e.event_type == "snapshot_accepted"
+    ]
+    if not accepted:
+        raise AppError(
+            ARTEFACT_NOT_FOUND,
+            f"No unit was accepted in {run_id}, so there is no migrated project",
+            status_code=404,
+            details={"run_id": run_id},
+        )
+    revision = accepted[-1].payload.get("revision")
+    try:
+        tree = Path(await ports.workspace_path(run_id, revision))
+    except ports.IntegrationUnavailable as exc:
+        raise AppError(
+            "INTEGRATION_UNAVAILABLE", str(exc), status_code=503,
+            details={"owner": exc.owner},
+        ) from exc
+    if not tree.is_dir():
+        raise AppError(
+            ARTEFACT_NOT_FOUND,
+            f"The accepted tree {revision} of {run_id} is no longer on this machine",
+            status_code=404,
+            details={"run_id": run_id, "revision": revision},
+        )
+    path = await artefacts.write_export(report, await store.get_plan(run.plan_id), revision, tree)
+    return FileResponse(path, filename=f"{run_id}-migrated.zip")

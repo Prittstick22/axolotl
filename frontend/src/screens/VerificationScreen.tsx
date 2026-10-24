@@ -7,6 +7,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { getPlan, getRunDiff, getRunUnit } from '@/api/client';
 import { StatusBadge } from '@/components/StatusBadge';
 import { buttonVariants } from '@/components/ui/button';
+import { changes } from '@/lib/diff';
 import { gateChip } from '@/lib/events';
 import { isLive, POLL_MS, useRun } from '@/lib/run';
 import { GATE_STATUS, TONE_TEXT, type Tone } from '@/lib/status';
@@ -26,14 +27,6 @@ const CASE_STATUS: Record<Counterexample['status'], { icon: typeof CheckCircleIc
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const muted = 'text-sm text-muted-foreground';
 
-/** Counted from the unified diff, minus its two header lines. */
-function changes(unified: string) {
-  const lines = unified.split('\n');
-  return {
-    added: lines.filter((l) => l.startsWith('+') && !l.startsWith('+++ b/')).length,
-    removed: lines.filter((l) => l.startsWith('-') && !l.startsWith('--- a/')).length,
-  };
-}
 
 function DiffPane({ unit, diff }: { unit: UnitRunState; diff: UseQueryResult<RunDiff> }) {
   const [picked, setPicked] = useState(0);

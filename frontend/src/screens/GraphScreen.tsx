@@ -20,13 +20,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useOutletContext, useParams, useSearchParams } from 'react-router-dom';
 
-import { getGraph, getPlan } from '@/api/client';
+import { getDependencyChanges, getGraph, getPlan } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { dependencyEdges } from '@/lib/graph';
 import { isLive, POLL_MS, useRun } from '@/lib/run';
 import { TONE_BORDER, TONE_TEXT, TONE_TINT, UNIT_STATUS } from '@/lib/status';
 import { ModuleInspector } from '@/screens/ModuleInspector';
-import type { GraphEdge, GraphNode, GraphPayload, Resolution } from '@/types/contracts';
+import type { DependencyChanges, GraphEdge, GraphNode, GraphPayload, Resolution } from '@/types/contracts';
 
 const W = 190;
 const H = 58;
@@ -99,7 +99,7 @@ const LEGEND: [string, string | undefined, string, number][] = [
 ];
 
 /** Shown on canvases at least 672px wide; narrower ones get a Key button so it doesn't cover the graph. */
-function Legend() {
+function Legend({ hasChanges = false }: { hasChanges?: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="flex flex-col items-start gap-2">
@@ -120,6 +120,12 @@ function Legend() {
             {label}
           </span>
         ))}
+        {hasChanges && (
+          <>
+            <span className="flex items-center gap-2"><span aria-hidden className="w-8 border-t-2 border-passed" />Added</span>
+            <span className="flex items-center gap-2"><span aria-hidden className="w-8 border-t-2 border-dashed border-failed" />Removed</span>
+          </>
+        )}
       </div>
       <Button variant="outline" className="bg-card @2xl:hidden" aria-expanded={open} aria-controls="graph-key" onClick={() => setOpen(!open)}>
         {open ? 'Hide key' : 'Key'}
@@ -149,20 +155,71 @@ function Zoom() {
   );
 }
 
-function Canvas({ graph, selected, filter, onSelect, attempts }: {
+function Canvas({ graph, selected, filter, onSelect, attempts, dependencyChanges }: {
   graph: GraphPayload;
   selected: string | null;
   filter: string;
   onSelect: (id: string | null) => void;
   attempts?: Map<string, number>;
+  dependencyChanges?: DependencyChanges;
 }) {
-  const edges = useMemo(() => dependencyEdges(graph.edges), [graph]);
-  const positions = useMemo(() => layout(graph, edges), [graph, edges]);
+  const graphWithChanges = useMemo(() => {
+    if (!dependencyChanges) return graph;
+    const nodes = new Map(graph.nodes.map((node) => [node.id, node]));
+    for (const change of dependencyChanges.modules) {
+      if (nodes.has(change.module_id)) continue;
+      nodes.set(change.module_id, {
+        id: change.module_id,
+        label: change.path.split('/').at(-1) || change.module_id,
+        kind: 'local_module',
+        path: change.path,
+        status: 'not_planned',
+        unit_id: null,
+        function_count: 0,
+        class_count: 0,
+        warnings: [],
+      });
+    }
+    const changes = [
+      ...dependencyChanges.edges.added.map((edge) => ({ edge, resolution: 'added' as const })),
+      ...dependencyChanges.edges.removed.map((edge) => ({ edge, resolution: 'removed' as const })),
+    ];
+    for (const { edge } of changes) {
+      for (const id of [edge.source, edge.target]) {
+        if (nodes.has(id)) continue;
+        const external = id.startsWith('ext_');
+        nodes.set(id, {
+          id,
+          label: external ? id.slice(4) : id,
+          kind: external ? 'external_package' : 'local_module',
+          path: null,
+          status: 'not_planned',
+          unit_id: null,
+          function_count: 0,
+          class_count: 0,
+          warnings: [],
+        });
+      }
+    }
+    const changeEdges = changes.map(({ edge }) => ({
+      ...edge,
+      id: `${edge.source}>${edge.target}:${edge.type}`,
+      resolution: 'confirmed' as const,
+      basis: 'static_ast' as const,
+      source_path: null,
+      source_line: null,
+    }));
+    return { ...graph, nodes: [...nodes.values()], edges: [...graph.edges, ...changeEdges] };
+  }, [dependencyChanges, graph]);
+  const edges = useMemo(() => dependencyEdges(graphWithChanges.edges), [graphWithChanges]);
+  const positions = useMemo(() => layout(graphWithChanges, edges), [graphWithChanges, edges]);
   // Selecting a module lights up its reverse dependants: what breaks if it changes.
   const dependants = new Set(edges.filter((e) => e.target === selected).map((e) => e.source));
   const q = filter.trim().toLowerCase();
 
-  const nodes: FlowNode[] = graph.nodes.map((n) => {
+  const added = new Set((dependencyChanges?.edges.added ?? []).map((e) => `${e.source}>${e.target}`));
+  const removed = new Set((dependencyChanges?.edges.removed ?? []).map((e) => `${e.source}>${e.target}`));
+  const nodes: FlowNode[] = graphWithChanges.nodes.map((n) => {
     const external = n.kind === 'external_package';
     const dim = Boolean(selected && n.id !== selected && !dependants.has(n.id)) || Boolean(q && !n.label.toLowerCase().includes(q));
     return {
@@ -171,16 +228,18 @@ function Canvas({ graph, selected, filter, onSelect, attempts }: {
       position: positions.get(n.id)!,
       data: { node: n, dim, attempt: n.unit_id ? attempts?.get(n.unit_id) : undefined },
       selected: n.id === selected,
-      selectable: !external,
-      focusable: !external,
+      selectable: !external && graph.nodes.some((known) => known.id === n.id),
+      focusable: !external && graph.nodes.some((known) => known.id === n.id),
       draggable: false,
       width: W,
       height: H,
     };
   });
   const flowEdges: Edge[] = edges.map((e) => {
+    const isAdded = added.has(`${e.source}>${e.target}`);
+    const isRemoved = removed.has(`${e.source}>${e.target}`) && !isAdded;
     const lit = e.target === selected;
-    const colour = lit ? 'var(--foreground)' : selected || e.resolution === 'unresolved' ? 'var(--border-strong)' : 'var(--muted-foreground)';
+    const colour = isAdded ? 'var(--passed)' : isRemoved ? 'var(--failed)' : lit ? 'var(--foreground)' : selected || e.resolution === 'unresolved' ? 'var(--border-strong)' : 'var(--muted-foreground)';
     return {
       id: `${e.source}>${e.target}`,
       source: e.source,
@@ -189,7 +248,7 @@ function Canvas({ graph, selected, filter, onSelect, attempts }: {
       selectable: false,
       focusable: false,
       zIndex: lit ? 1 : 0,
-      style: { stroke: colour, strokeWidth: lit ? 3 : 1.5, strokeDasharray: DASH[e.resolution] },
+      style: { stroke: colour, strokeWidth: lit ? 3 : 1.5, strokeDasharray: isAdded ? '5 3' : isRemoved ? '2 4' : DASH[e.resolution] },
       markerEnd: { type: MarkerType.ArrowClosed, color: colour, width: lit ? 18 : 14, height: lit ? 18 : 14, markerUnits: 'userSpaceOnUse' },
     };
   });
@@ -219,7 +278,7 @@ function Canvas({ graph, selected, filter, onSelect, attempts }: {
     >
       {/* % is of the canvas, leaving room for the zoom panel on the right. */}
       <Panel position="bottom-left" className="max-w-[calc(100%-160px)]">
-        <Legend />
+        <Legend hasChanges={Boolean(dependencyChanges?.revision)} />
       </Panel>
       <Zoom />
     </ReactFlow>
@@ -233,6 +292,7 @@ export function GraphArea({ graph, ...canvas }: {
   filter: string;
   onSelect: (id: string | null) => void;
   attempts?: Map<string, number>;
+  dependencyChanges?: DependencyChanges;
 }) {
   return (
     <div className="@container relative min-h-[420px] flex-1 bg-background bg-[linear-gradient(var(--grid)_1px,transparent_1px),linear-gradient(90deg,var(--grid)_1px,transparent_1px)] bg-size-[24px_24px]">
@@ -300,6 +360,11 @@ export default function GraphScreen() {
     queryFn: () => getGraph(repoId, runId),
     refetchInterval: runId && isLive(run.data) ? POLL_MS : false,
   });
+  const dependencyChanges = useQuery({
+    queryKey: ['dependency-changes', runId],
+    queryFn: () => getDependencyChanges(runId!),
+    enabled: Boolean(runId),
+  });
   const planId = params.get('plan');
   const plan = useQuery({ queryKey: ['plan', planId], queryFn: () => getPlan(planId!), enabled: Boolean(planId) });
 
@@ -316,7 +381,7 @@ export default function GraphScreen() {
   return (
     <main className="flex min-h-[480px] flex-1 flex-col md:flex-row">
       {navSlot && createPortal(<FilterField value={filter} onChange={setFilter} />, navSlot)}
-      <GraphArea graph={graph} selected={selected} filter={filter} onSelect={select} />
+      <GraphArea graph={graph} selected={selected} filter={filter} onSelect={select} dependencyChanges={dependencyChanges.data} />
       {selected && graph.data && (
         <aside
           aria-label="Module inspector"

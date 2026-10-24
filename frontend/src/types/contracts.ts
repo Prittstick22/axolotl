@@ -210,6 +210,50 @@ export interface SearchResults {
   hits: SearchHit[];
 }
 
+export interface DependencyChangeItem {
+  name: string;
+  basis: 'static_ast' | 'py2_rename_table' | 'name_match';
+}
+
+export interface DependencyReplacement {
+  before: string;
+  after: string;
+  basis: 'py2_rename_table' | 'name_match';
+}
+
+export interface DependencyModuleChange {
+  module_id: string;
+  path: string;
+  status: 'added' | 'removed' | 'changed';
+  imports_added: DependencyChangeItem[];
+  imports_removed: DependencyChangeItem[];
+  stdlib_renamed: DependencyReplacement[];
+  builtins_replaced: DependencyReplacement[];
+  methods_replaced: DependencyReplacement[];
+}
+
+export interface DependencyEdgeChange {
+  source: string;
+  target: string;
+  type: EdgeType;
+}
+
+export interface DependencyChanges {
+  run_id: string;
+  repository_id: string;
+  base_revision: string;
+  revision: string | null;
+  modules: DependencyModuleChange[];
+  edges: { added: DependencyEdgeChange[]; removed: DependencyEdgeChange[]; basis?: string };
+  packages: { added: string[]; removed: string[]; kept: string[]; basis?: string; note?: string };
+  python: {
+    before: { declared: string | null; evidence: string[] };
+    after: { declared: string | null; evidence: string[] };
+    basis: string;
+  } | null;
+  warnings: string[];
+}
+
 // ---------- planning ----------
 export interface MigrationTarget {
   target_id: string;

@@ -10,6 +10,7 @@ import type {
   ApiErrorBody,
   Artefact,
   DemoFixture,
+  DependencyChanges,
   GraphPayload,
   IndexStatus,
   MigrationPlan,
@@ -155,6 +156,11 @@ export function getIndexStatus(repoId: string): Promise<IndexStatus> {
 /** GET /api/v1/repositories/{repo_id}/search - 503 SEARCH_INDEX_NOT_READY while an index builds, never an empty result. */
 export function searchRepository(repoId: string, q: string, mode: SearchMode): Promise<SearchResults> {
   return apiFetch<SearchResults>(`${repo(repoId)}/search?${new URLSearchParams({ q, mode })}`);
+}
+
+/** GET /api/v1/runs/{run_id}/dependency-changes - legacy vs last accepted revision (#34). */
+export function getDependencyChanges(runId: string): Promise<DependencyChanges> {
+  return apiFetch<DependencyChanges>(`${run(runId)}/dependency-changes`);
 }
 
 const post = <T>(path: string, body?: unknown) =>

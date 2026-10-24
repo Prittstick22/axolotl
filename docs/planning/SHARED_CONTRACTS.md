@@ -477,7 +477,7 @@ Errors: `{"error": {"code": "SNAKE_CASE", "message": "...", "details": {}}}` wit
 | `POST /repositories/{repo_id}/plans` | Dev 2 | `{target_id}` | `MigrationPlan` (status `draft`) — 422 `UNSUPPORTED_TARGET`, 409 `REPOSITORY_NOT_EXECUTABLE` |
 | `GET /plans/{plan_id}` | Dev 2 | — | `MigrationPlan` |
 | `POST /plans/{plan_id}/approve` | Dev 2 | `{approved: bool}` | `MigrationPlan` |
-| `POST /plans/{plan_id}/runs` | Dev 2 | — | `RunSummary` (state `queued`) — 409 if plan not approved |
+| `POST /plans/{plan_id}/runs` | Dev 2 | — | `RunSummary` (state `queued`) — 409 `PLAN_NOT_APPROVED` if the plan is not approved, 409 `RUN_ALREADY_ACTIVE` if a run is already active for that **repository** |
 | `GET /runs/{run_id}` | Dev 2 | — | `RunSummary` |
 | `GET /runs/{run_id}/events` | Dev 2 | `?after_sequence=0&limit=200` | `RunEvent[]` ascending |
 | `GET /runs/{run_id}/units/{unit_id}` | Dev 2 | — | `{unit: UnitRunState, verifications: VerificationResult[], counterexamples: Counterexample[]}` (held-out case inputs redacted unless `exposed_to_model`) |

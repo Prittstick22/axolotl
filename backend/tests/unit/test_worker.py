@@ -20,6 +20,7 @@ from datetime import UTC, datetime
 import pytest
 
 from app.agents.contexts import UnitSessionOutcome
+from app.errors import AppError
 from app.models.contracts import (
     BaselineSummary,
     FilePatch,
@@ -977,3 +978,53 @@ async def test_a_finished_run_is_left_alone_on_startup(world):
 
     assert await worker_module.mark_interrupted_runs() == []
     assert {rid: doc["state"] for rid, doc in world.runs.items()} == states_before
+
+
+# --------------------------------------------------------------------------
+# #18: one active run per repository
+# --------------------------------------------------------------------------
+
+async def test_a_second_run_on_the_same_repository_is_refused(world):
+    """A double click used to start two runs, each with its own Argon session:
+    the quota spent twice, and two competing sets of accepted revisions from one
+    snapshot."""
+    first = await worker_module.start_run("plan_test000001")
+
+    with pytest.raises(AppError) as caught:
+        await worker_module.start_run("plan_test000001")
+
+    assert caught.value.status_code == 409
+    assert caught.value.code == "RUN_ALREADY_ACTIVE"
+    assert caught.value.details["active_run_id"] == first.run_id
+
+    task = worker_module._tasks.get(first.run_id)
+    if task is not None:
+        await task
+
+
+async def test_another_plan_on_the_same_repository_is_refused_too(world):
+    """Scoped to the repository, not the plan: a second plan migrating the same
+    snapshot is the same hazard."""
+    first = await worker_module.start_run("plan_test000001")
+
+    # The World serves one plan whatever id is asked for, which is exactly the case
+    # here: a different plan id, the same repository.
+    with pytest.raises(AppError) as caught:
+        await worker_module.start_run("plan_test000002")
+    assert caught.value.code == "RUN_ALREADY_ACTIVE"
+    assert caught.value.details["repository_id"] == world.plan.repository_id
+
+    task = worker_module._tasks.get(first.run_id)
+    if task is not None:
+        await task
+
+
+async def test_a_new_run_is_allowed_once_the_first_has_finished(world):
+    """The guard is about *active* runs; a repository can be migrated twice."""
+    await run_to_completion(world)
+
+    second = await worker_module.start_run("plan_test000001")
+    assert second.run_id
+    task = worker_module._tasks.get(second.run_id)
+    if task is not None:
+        await task

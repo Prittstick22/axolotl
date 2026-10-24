@@ -49,6 +49,10 @@ PLAN_NOT_APPROVED = "PLAN_NOT_APPROVED"
 PLAN_ALREADY_DECIDED = "PLAN_ALREADY_DECIDED"
 REPORT_NOT_READY = "REPORT_NOT_READY"
 RUN_ALREADY_FINISHED = "RUN_ALREADY_FINISHED"
+# One active run per repository (#18). Not per plan: the hazard is two Argon sessions
+# migrating the same snapshot at once, and a second plan on the same repository does
+# that just as well as a second click on one plan.
+RUN_ALREADY_ACTIVE = "RUN_ALREADY_ACTIVE"
 INTEGRATION_UNAVAILABLE = "INTEGRATION_UNAVAILABLE"
 # Re-indexing reads sources from the on-disk snapshot, which is **machine-local**: a
 # repository imported on someone else's laptop has no snapshot here. Distinct from

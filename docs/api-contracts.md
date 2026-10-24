@@ -159,6 +159,16 @@ Body `{"approved": true}`. Sets `approved_at`. 409 `PLAN_ALREADY_DECIDED` on a s
 409 `PLAN_NOT_APPROVED` unless the plan is approved. Starts a background asyncio task —
 **work is never tied to the HTTP request lifetime**.
 
+409 `RUN_ALREADY_ACTIVE` if a run is already active **for that repository** (#18), with
+`details.active_run_id` and its state. Scoped to the repository rather than the plan:
+the hazard is two Argon sessions migrating one snapshot at once, spending the quota
+twice and producing two competing sets of accepted revisions, and a second plan on the
+same repository does that just as well as a second click on one plan. Cancel the active
+run, or wait for it; a repository can be migrated again once its run has finished.
+
+The Plan screen already shows "View run" when the URL carries a run, so this closes the
+API side of the same hazard.
+
 ### ✅ `GET /runs/{run_id}` → `RunSummary`
 Poll this every 1.5 s while `state` is non-terminal.
 

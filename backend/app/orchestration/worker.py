@@ -14,7 +14,12 @@ import asyncio
 import logging
 
 from app.config import get_settings
-from app.errors import PLAN_NOT_APPROVED, RUN_ALREADY_FINISHED, AppError
+from app.errors import (
+    PLAN_NOT_APPROVED,
+    RUN_ALREADY_ACTIVE,
+    RUN_ALREADY_FINISHED,
+    AppError,
+)
 from app.models.contracts import (
     MigrationPlan,
     MigrationUnit,
@@ -59,6 +64,26 @@ async def start_run(plan_id: str) -> RunSummary:
             f"Plan {plan_id} is {plan.status}; approve it before starting a run",
             status_code=409,
             details={"plan_id": plan_id, "status": plan.status},
+        )
+
+    # One active run per repository (#18). A double click used to start two runs, each
+    # with its own Argon session, spending the quota twice and producing two competing
+    # sets of accepted revisions from one snapshot. Scoped to the repository rather
+    # than the plan because a second plan on the same repository is the same hazard,
+    # and `supersede_open_plans` already treats a repository as having one live plan.
+    active = [
+        r for r in await store.list_unfinished_runs()
+        if r.repository_id == plan.repository_id
+    ]
+    if active:
+        raise AppError(
+            RUN_ALREADY_ACTIVE,
+            f"Run {active[0].run_id} is still active for this repository; "
+            f"wait for it to finish or cancel it",
+            status_code=409,
+            details={"repository_id": plan.repository_id,
+                     "active_run_id": active[0].run_id,
+                     "state": active[0].state},
         )
 
     runner = await _runner_mode()

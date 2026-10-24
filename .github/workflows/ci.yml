@@ -93,7 +93,7 @@ jobs:
         run: uv run pytest -q -m docker
 
   frontend:
-    name: frontend · build + lint
+    name: frontend · test + build + lint
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -113,6 +113,9 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      - name: Tests
+        run: npm test
 
       # `tsc -b && vite build` - a type error fails the build, which is the point.
       - name: Build

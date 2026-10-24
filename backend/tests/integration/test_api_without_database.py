@@ -116,6 +116,26 @@ def test_system_status_reports_the_database_as_unavailable(client: TestClient):
     assert body["mongodb"] == "unavailable"
 
 
+def test_the_runner_is_unavailable_while_any_target_image_is_missing(
+    client: TestClient, monkeypatch
+):
+    """#95: only the 3.12 image used to be checked, so the chip read "ok" with the
+    chess run's 2.7 and 3.14 images missing."""
+    from app.api import system
+
+    async def runner_status(runtime):
+        if runtime.python == "3.14":
+            return {"mode": "disabled", "available": False,
+                    "detail": f"image {runtime.image} (Python 3.14) not found"}
+        return {"mode": "trusted_docker", "available": True}
+
+    monkeypatch.setattr(system, "runner_status", runner_status)
+    body = client.get(f"{API}/system/status").json()
+
+    assert body["runner"] == {"mode": "trusted_docker", "available": False}
+    assert "Python 3.14" in body["details"]["runner"]
+
+
 def test_an_unexpected_error_still_gets_the_contract_envelope(monkeypatch):
     """A reachable-but-failing Atlas (auth error, timeout mid-query) used to return a
     bare FastAPI 500 that clients cannot parse, having been promised one error shape.

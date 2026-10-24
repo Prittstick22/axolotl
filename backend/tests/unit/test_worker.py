@@ -103,6 +103,7 @@ class World:
         self.agent_mode = "normal"
         self.cancel_after_baseline = False
         self.cancel_during_final = False
+        self.missing_images: set[str] = set()   # Python versions with no image (#95)
 
     # -- store -----------------------------------------------------------
     async def get_plan(self, plan_id):
@@ -181,7 +182,11 @@ class World:
                 if unit_id is None or e["unit_id"] == unit_id]
 
     # -- ports -----------------------------------------------------------
-    async def runner_status(self):
+    async def runner_status(self, runtime=None):
+        python = runtime.python if runtime is not None else "3.12"
+        if python in self.missing_images:
+            return {"mode": "disabled", "available": False,
+                    "detail": f"image for Python {python} not found"}
         return {"mode": "trusted_docker", "available": True, "image_digest": "sha256:x"}
 
     async def capture_baseline(self, run_id, repo_id, units):
@@ -1020,6 +1025,21 @@ async def test_a_second_run_on_the_same_repository_is_refused(world):
     task = worker_module._tasks.get(first.run_id)
     if task is not None:
         await task
+
+
+async def test_a_run_whose_candidate_image_is_missing_is_refused_before_it_starts(world):
+    """#95: only the 3.12 image used to be checked, so a chess run started and every
+    unit spent Argon calls on a 3.14 candidate nothing could verify."""
+    world.plan.target_id = "python2_to_3"
+    world.missing_images = {"3.14"}
+
+    with pytest.raises(AppError) as caught:
+        await worker_module.start_run("plan_test000001")
+
+    assert caught.value.status_code == 503
+    assert caught.value.code == "RUNNER_UNAVAILABLE"
+    assert "Python 3.14" in caught.value.message
+    assert world.runs == {}, "a run was created anyway"
 
 
 async def test_another_plan_on_the_same_repository_is_refused_too(world):

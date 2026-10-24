@@ -18,6 +18,7 @@ from app.errors import (
     PLAN_NOT_APPROVED,
     RUN_ALREADY_ACTIVE,
     RUN_ALREADY_FINISHED,
+    RUNNER_UNAVAILABLE,
     AppError,
 )
 from app.models.contracts import (
@@ -86,7 +87,7 @@ async def start_run(plan_id: str) -> RunSummary:
                      "state": active[0].state},
         )
 
-    runner = await _runner_mode()
+    runner = await _runner_mode(plan)
     run = RunSummary(
         run_id=new_run_id(),
         plan_id=plan.plan_id,
@@ -179,12 +180,31 @@ async def mark_interrupted_runs() -> list[str]:
     return interrupted
 
 
-async def _runner_mode() -> str:
+async def _runner_mode(plan: MigrationPlan) -> str:
+    """The run's runner mode, after checking both images its target needs (#95).
+
+    Only the 3.12 image used to be checked. With the 3.14 candidate image missing,
+    every unit spent Argon calls on a patch that `verify_unit` then could not run.
+    A missing baseline image would fail the run at the baseline anyway, so refusing
+    here only says so sooner, and says which image to build.
+    """
     try:
-        status = await ports.runner_status()
-        return str(status.get("mode", "disabled"))
+        pair = ports.runtimes_for_target(plan.target_id)
+        statuses = [await ports.runner_status(pair.baseline),
+                    await ports.runner_status(pair.candidate)]
     except ports.IntegrationUnavailable:
         return "disabled"
+
+    missing = [s for s in statuses if not s.get("available")]
+    if missing:
+        reasons = "; ".join(dict.fromkeys(str(s.get("detail")) for s in missing))
+        raise AppError(
+            RUNNER_UNAVAILABLE,
+            f"The sandbox runner can't run this plan's target yet: {reasons}",
+            status_code=503,
+            details={"target_id": plan.target_id},
+        )
+    return str(statuses[0].get("mode", "disabled"))
 
 
 # --------------------------------------------------------------------------

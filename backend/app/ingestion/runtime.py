@@ -5,6 +5,8 @@ import re
 import tomllib
 from pathlib import Path
 
+from app.analysis.python2 import python2_tree
+
 
 def inspect_runtime(root: Path) -> dict:
     # Snapshots are local to the importing machine; the record is shared via Atlas.
@@ -36,7 +38,14 @@ def inspect_runtime(root: Path) -> dict:
                     requirement = tomllib.loads(text).get("project", {}).get("requires-python")
                     values = [requirement] if isinstance(requirement, str) else []
                 else:
-                    tree = ast.parse(text)
+                    try:
+                        tree = ast.parse(text)
+                    except SyntaxError:
+                        # A Python 2 setup.py is exactly where the declaration lives
+                        # (#24). Read, never executed, never rewritten.
+                        tree = python2_tree(text, name)
+                        if tree is None:
+                            raise
                     values = [
                         kw.value.value
                         for node in ast.walk(tree)

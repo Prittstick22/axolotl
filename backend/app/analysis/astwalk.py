@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
 from app.analysis.identifiers import dotted_name_for, module_id_for, symbol_id_for
+from app.analysis.python2 import python2_tree, uses_absolute_import
 from app.models.contracts import SymbolRecord
 
 log = logging.getLogger(__name__)
@@ -49,6 +50,11 @@ class ModuleAnalysis:
     imports: list[ImportRef] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     parsed: bool = True
+    # Parsed through the line-preserving Python 2 reading (#24, analysis/python2.py).
+    python2_syntax: bool = False
+    # Python 2 resolves `import x` inside a package to a sibling module first, unless
+    # the module opts out with `from __future__ import absolute_import`.
+    absolute_import: bool = False
 
     @property
     def function_count(self) -> int:
@@ -92,12 +98,25 @@ def analyse_module(
     try:
         tree = ast.parse(analysis.source, filename=relative_path)
     except SyntaxError as exc:
-        # §5.2: a syntax error is a file-level warning and a `partial` repository.
-        analysis.parsed = False
+        # Python 2-only syntax is not an error in a Python 2 repository (#24). The
+        # reading keeps every line in place and never changes the file.
+        python2 = python2_tree(analysis.source, relative_path)
+        if python2 is None:
+            # §5.2: a syntax error is a file-level warning and a `partial` repository.
+            analysis.parsed = False
+            analysis.warnings.append(
+                f"{relative_path}: syntax error at line {exc.lineno}: {exc.msg}"
+            )
+            return analysis
+        tree = python2
+        analysis.python2_syntax = True
         analysis.warnings.append(
-            f"{relative_path}: syntax error at line {exc.lineno}: {exc.msg}"
+            f"{relative_path}: Python 2-only syntax (Python 3 stops at line "
+            f"{exc.lineno}); analysed with the Python 2 grammar. The file itself is "
+            "unchanged."
         )
-        return analysis
+
+    analysis.absolute_import = uses_absolute_import(tree)
 
     total_lines = analysis.source.count("\n") + 1
     analysis.symbols.append(

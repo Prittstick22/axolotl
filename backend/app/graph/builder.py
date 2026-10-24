@@ -102,7 +102,7 @@ def _resolve(
         )
 
     candidates = _candidate_names(analysis, reference)
-    for candidate in candidates:
+    for candidate in _python2_siblings(analysis, reference, candidates) + candidates:
         if candidate in by_dotted:
             return _edge(
                 source, by_dotted[candidate], reference.edge_type, "confirmed",
@@ -145,6 +145,31 @@ def _candidate_names(analysis: ModuleAnalysis, reference: ImportRef) -> list[str
     for stop in range(len(parts) - 1, 0, -1):
         candidates.append(".".join(parts[:stop]))
     return candidates
+
+
+def _python2_siblings(
+    analysis: ModuleAnalysis, reference: ImportRef, candidates: list[str]
+) -> list[str]:
+    """Python 2 (#24): inside a package, `import board` means the sibling `pkg.board`
+    before any top-level `board`.
+
+    Only for files that are certainly Python 2 - they needed the Python 2 grammar -
+    and have not opted out with `from __future__ import absolute_import`. Kept apart
+    from `_candidate_names` so an unmatched import is still named for what was
+    written (`ext_json`), never for the guessed sibling (`ext_pkg`).
+    """
+    package = _package_of(analysis)
+    if reference.level or not analysis.python2_syntax or analysis.absolute_import \
+            or not package:
+        return []
+    return [f"{package}.{c}" for c in candidates]
+
+
+def _package_of(analysis: ModuleAnalysis) -> str:
+    """`pkg.game` -> `pkg`; a package's own `__init__.py` -> the package itself."""
+    if analysis.path.endswith("__init__.py"):
+        return analysis.dotted
+    return analysis.dotted.rpartition(".")[0]
 
 
 def _relative_base(dotted: str, level: int) -> str:

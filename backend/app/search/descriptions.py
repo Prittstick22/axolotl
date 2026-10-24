@@ -19,11 +19,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any
 
 from app.config import get_settings
 from app.search.retry import describe, with_retries
-from app.search.settings import description_model
+from app.search.settings import description_model, search_settings
 
 log = logging.getLogger(__name__)
 
@@ -43,6 +44,33 @@ SYSTEM_RULES = (
     "Say what it does and why it matters to a caller. Prefer the vocabulary a "
     "non-author would search for over the identifiers already in the code."
 )
+
+
+class _Pacer:
+    """Spaces call starts evenly: at most `per_minute` in any minute, process-wide.
+
+    One schedule for every concurrent describer, so five workers cannot burst five
+    calls into the same second. Retries take a slot too: a retry is a request.
+    `time.monotonic` rather than a loop's clock, so the schedule survives the
+    separate event loops a test run or a background task may use.
+    """
+
+    def __init__(self) -> None:
+        self._next = 0.0
+
+    async def wait(self, per_minute: int) -> None:
+        if per_minute <= 0:
+            return
+        now = time.monotonic()
+        start = max(now, self._next)
+        # No await between reading and moving `_next`, so concurrent callers each
+        # get their own slot.
+        self._next = start + 60.0 / per_minute
+        if start > now:
+            await asyncio.sleep(start - now)
+
+
+_pacer = _Pacer()
 
 
 def _prompt(chunk: dict[str, Any]) -> str:
@@ -86,6 +114,7 @@ async def describe_chunks(chunks: list[dict[str, Any]]) -> list[str]:
             name = chunk.get("qualified_name")
 
             async def call() -> str:
+                await _pacer.wait(search_settings().gemini_descriptions_per_minute)
                 response = await client.aio.models.generate_content(
                     model=model, contents=_prompt(chunk)
                 )
@@ -94,6 +123,9 @@ async def describe_chunks(chunks: list[dict[str, Any]]) -> list[str]:
             try:
                 text = await with_retries(call, what=f"description for {name}")
             except Exception as exc:  # noqa: BLE001 - reported, never invented
+                # The full text: it says which limit (per minute or per day) and when
+                # it clears, which the short form in the retry log cuts off.
+                log.warning("description for %s failed: %s", name, describe(exc, 600))
                 if _is_quota_exhausted(exc) and not exhausted:
                     exhausted.append(describe(exc))
                     log.warning("description quota exhausted; skipping the rest")

@@ -12,6 +12,10 @@ both read one `.env` without stepping on each other.
   GEMINI_DESCRIPTION_MODEL  the model that writes descriptions. Unset, it is
                             `GEMINI_MODEL`, as before; set it to a cheap Flash model so
                             descriptions never spend the agent's (Argon's) quota.
+  GEMINI_DESCRIPTIONS_PER_MINUTE
+                            spaces description calls evenly to stay under the model's
+                            per-minute limit, which free-tier Flash hit after 8 calls on
+                            24 Oct. 0 (default) means unpaced, as before.
 """
 
 from functools import lru_cache
@@ -31,6 +35,7 @@ class SearchSettings(BaseSettings):
 
     index_descriptions: bool = False
     gemini_description_model: str = ""
+    gemini_descriptions_per_minute: int = 0
 
 
 @lru_cache

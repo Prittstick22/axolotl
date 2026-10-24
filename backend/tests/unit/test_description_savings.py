@@ -268,3 +268,96 @@ async def test_reuse_without_descriptions_prefers_a_described_chunk(monkeypatch)
     found = await search.find_enrichment(["c"], need_description=False)
     assert "description" not in seen["query"]
     assert found["c"]["description"] == "paid for already"
+
+
+# --------------------------------------------------------------------------
+# pacing (GEMINI_DESCRIPTIONS_PER_MINUTE)
+# --------------------------------------------------------------------------
+
+async def test_unpaced_by_default(monkeypatch):
+    from app.search import descriptions
+
+    slept: list[float] = []
+
+    async def sleep(seconds):
+        slept.append(seconds)
+
+    monkeypatch.setattr(descriptions.asyncio, "sleep", sleep)
+    pacer = descriptions._Pacer()
+    for _ in range(10):
+        await pacer.wait(0)
+    assert slept == []
+
+
+async def test_calls_are_spaced_evenly_across_concurrent_callers(monkeypatch):
+    """Five workers asking at once get five slots twelve seconds apart, not a burst."""
+    import asyncio
+
+    from app.search import descriptions
+
+    clock = {"now": 1000.0}
+    slept: list[float] = []
+
+    async def sleep(seconds):
+        slept.append(round(seconds, 6))
+
+    monkeypatch.setattr(descriptions.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(descriptions.asyncio, "sleep", sleep)
+    pacer = descriptions._Pacer()
+
+    await asyncio.gather(*(pacer.wait(5) for _ in range(5)))
+    assert sorted(slept) == [12.0, 24.0, 36.0, 48.0], "first goes at once"
+
+
+async def test_a_quiet_spell_does_not_bank_a_burst(monkeypatch):
+    from app.search import descriptions
+
+    clock = {"now": 1000.0}
+    slept: list[float] = []
+
+    async def sleep(seconds):
+        slept.append(seconds)
+
+    monkeypatch.setattr(descriptions.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(descriptions.asyncio, "sleep", sleep)
+    pacer = descriptions._Pacer()
+
+    await pacer.wait(5)
+    clock["now"] += 600          # ten quiet minutes
+    await pacer.wait(5)
+    await pacer.wait(5)
+    assert slept == [12.0], "after a pause, one goes at once and the next waits"
+
+
+async def test_every_description_request_takes_a_slot(monkeypatch):
+    import google.genai
+
+    from app.search import descriptions
+
+    waits: list[int] = []
+
+    async def wait(self, per_minute):
+        waits.append(per_minute)
+
+    class Models:
+        async def generate_content(self, model, contents, **_):
+            return SimpleNamespace(text="d")
+
+    class Client:
+        def __init__(self, *_, **__):
+            self.aio = SimpleNamespace(models=Models())
+
+    monkeypatch.setattr(descriptions._Pacer, "wait", wait)
+    monkeypatch.setattr(google.genai, "Client", Client)
+    monkeypatch.setattr(get_settings(), "gemini_api_key", "placeholder-not-a-key")
+    monkeypatch.setattr(search_settings(), "gemini_descriptions_per_minute", 5)
+
+    chunks = [{"qualified_name": f"m.f{i}", "path": "m.py", "source": "x"}
+              for i in range(3)]
+    await descriptions.describe_chunks(chunks)
+    assert waits == [5, 5, 5]
+
+
+def test_the_rate_is_read_from_the_environment(monkeypatch):
+    monkeypatch.setenv("GEMINI_DESCRIPTIONS_PER_MINUTE", "5")
+    assert SearchSettings(_env_file=None).gemini_descriptions_per_minute == 5

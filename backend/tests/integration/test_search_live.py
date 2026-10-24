@@ -102,6 +102,12 @@ def replay_gemini(request):
     mp.setattr(search, "embed_one", embed_one)       # query embeddings
     mp.setattr(descriptions, "describe_chunks",
                replaying_describe_chunks(descriptions.describe_chunks, store, stats))
+    # T-07 is "a question sharing no word with the code still finds it", which is
+    # what descriptions are for. Imports default to no descriptions (#11), so this
+    # file asks for them, to keep testing the same thing.
+    from app.search.settings import search_settings
+
+    mp.setattr(search_settings(), "index_descriptions", True)
     try:
         yield stats
     finally:

@@ -246,6 +246,12 @@ async def test_reuse_requires_the_same_models_and_dimensions(monkeypatch):
     assert await search.find_enrichment(["chunk_a"]) == {}
     query = seen["query"]
     assert query["chunk_id"] == {"$in": ["chunk_a"]}
-    assert query["enriched_with"].endswith("|gemini-embedding-1.0:768")
-    assert query["enriched_with"].startswith(settings.gemini_model + "|")
+    pattern = query["enriched_with"]["$regex"]
+    import re
+
+    assert re.search(pattern, "gemini-4-argon|gemini-embedding-1.0:768")
+    assert re.search(pattern, "none|gemini-embedding-1.0:768")
+    assert not re.search(pattern, "gemini-4-argon|gemini-embedding-1.0:1536")
+    assert not re.search(pattern, "gemini-4-argon|text-embedding-005:768")
     assert query["embedding"] == {"$type": "array"}
+    assert query["description"] == {"$type": "string"}

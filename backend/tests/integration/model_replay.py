@@ -22,6 +22,7 @@ from typing import Any, Protocol
 
 from app.config import get_settings
 from app.search.embeddings import DOCUMENT_TASK, QUERY_TASK
+from app.search.settings import description_model
 
 PREFIX = "axolotl/gemini"
 
@@ -124,7 +125,7 @@ def replaying_describe_chunks(
     """
 
     def key_for(chunk: dict[str, Any]) -> str:
-        return cache_key("description", get_settings().gemini_model, chunk.get("path"),
+        return cache_key("description", description_model(), chunk.get("path"),
                          chunk.get("qualified_name"), chunk.get("source"))
 
     async def describe_chunks(chunks: list[dict[str, Any]]) -> list[str]:

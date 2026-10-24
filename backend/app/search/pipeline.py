@@ -83,6 +83,13 @@ async def index_repository(
             "only keyword search will work for this repository"
         )
 
+    # Say which models produced each vector, so a later import of the same code can
+    # reuse it (find_enrichment) instead of paying for it again.
+    from app.search import chunk_tag
+
+    for chunk in chunks:
+        chunk["enriched_with"] = chunk_tag(chunk)
+
     try:
         await persist_chunks(repository_id, chunks)
     except Exception as exc:  # noqa: BLE001 - an un-indexed repository is still usable
@@ -162,15 +169,23 @@ async def schedule_enrichment(
 async def _enrich(repository_id: str, chunks: list[dict[str, Any]]) -> None:
     """Describe and embed in batches. Always ends `ready` or `failed`."""
     from app.search import progress, store_enrichment
+    from app.search.settings import search_settings
 
     warnings: list[str] = []
-    described = embedded = 0
-    describing = True
+    # Descriptions are one model call per chunk. Off by default at import (#11):
+    # chunks embed from their source and identifiers, and POST .../index adds them.
+    describing = search_settings().index_descriptions
+    if not describing:
+        warnings.append("descriptions were not generated at import (INDEX_DESCRIPTIONS "
+                        "is off); POST /repositories/{id}/index adds them")
     stopped: str | None = None
+    reused = described = embedded = 0
 
     try:
-        reused = await _reuse_enrichment(repository_id, chunks)
-        described = embedded = reused
+        reused = await _reuse_enrichment(repository_id, chunks,
+                                         need_description=describing)
+        described = sum(1 for c in chunks if c.get("description"))
+        embedded = reused
         if reused:
             await progress.advance(repository_id, described=described, embedded=embedded)
         pending = [c for c in chunks if not c.get("embedding")]
@@ -229,12 +244,15 @@ async def _enrich(repository_id: str, chunks: list[dict[str, Any]]) -> None:
         progress.release(repository_id)
 
 
-async def _reuse_enrichment(repository_id: str, chunks: list[dict[str, Any]]) -> int:
+async def _reuse_enrichment(
+    repository_id: str, chunks: list[dict[str, Any]], *, need_description: bool = True
+) -> int:
     """Fill in what Atlas already holds for identical code; returns how many (#11)."""
     from app.search import find_enrichment, store_enrichment
 
     try:
-        found = await find_enrichment([c["chunk_id"] for c in chunks])
+        found = await find_enrichment([c["chunk_id"] for c in chunks],
+                                      need_description=need_description)
     except Exception as exc:  # noqa: BLE001 - only costs quota, never correctness
         log.warning("could not look up earlier enrichment for %s: %s", repository_id, exc)
         return 0

@@ -34,8 +34,8 @@ from app.search.indexes import (
 
 log = logging.getLogger(__name__)
 
-__all__ = ["find_enrichment", "persist_chunks", "search_repository", "search_status",
-           "store_enrichment"]
+__all__ = ["chunk_tag", "find_enrichment", "persist_chunks", "search_repository",
+           "search_status", "store_enrichment"]
 
 SEARCH_INDEX_NOT_READY = "SEARCH_INDEX_NOT_READY"
 # A second index of a repository already being indexed would spend the Gemini quota
@@ -75,50 +75,83 @@ async def store_enrichment(repo_id: str, chunks: list[dict[str, Any]]) -> int:
 
     if not chunks:
         return 0
-    tag = enrichment_tag()
     database = await db.get_db()
     result = await database[CHUNKS_COLLECTION].bulk_write([
         UpdateOne(
             {"repository_id": repo_id, "chunk_id": c["chunk_id"]},
             {"$set": {"description": c.get("description"),
                       "embedding": c.get("embedding"),
-                      "enriched_with": tag if c.get("embedding") else None}},
+                      "enriched_with": chunk_tag(c)}},
         )
         for c in chunks
     ], ordered=False)
     return result.modified_count
 
 
-def enrichment_tag() -> str:
-    """Which models produced a chunk's description and embedding, and at what size."""
+def embedding_tag() -> str:
+    """The embedding model and dimension count, which a reused vector must match."""
     from app.config import get_settings
 
     s = get_settings()
-    return f"{s.gemini_model}|{s.gemini_embedding_model}:{s.embedding_dimensions}"
+    return f"{s.gemini_embedding_model}:{s.embedding_dimensions}"
 
 
-async def find_enrichment(chunk_ids: list[str]) -> dict[str, dict[str, Any]]:
+def enrichment_tag(described: bool = True) -> str:
+    """`<description model or none>|<embedding model>:<dimensions>`.
+
+    The description model is part of the tag because the description is part of what
+    was embedded (`embedding_text`): the same code embeds differently with and without
+    one.
+    """
+    from app.search.settings import description_model
+
+    return f"{description_model() if described else 'none'}|{embedding_tag()}"
+
+
+def chunk_tag(chunk: dict[str, Any]) -> str | None:
+    if not chunk.get("embedding"):
+        return None
+    return enrichment_tag(described=bool(chunk.get("description")))
+
+
+async def find_enrichment(
+    chunk_ids: list[str], *, need_description: bool = True
+) -> dict[str, dict[str, Any]]:
     """Descriptions and embeddings already stored for these chunks, by any repository.
 
-    Quota (#11): re-importing chess on demo day would otherwise pay for 244 Gemini
-    calls to get answers Atlas already holds. A chunk id is derived from the snapshot
-    hash and the symbol, so the same id means byte-identical code; `enriched_with`
-    must also match, so a change of model or dimensions is never served stale vectors.
-    These are the models' real earlier answers for exactly this code.
+    Quota (#11): re-importing chess on demo day would otherwise pay for its Gemini calls
+    again to get answers Atlas already holds. A chunk id is derived from the snapshot
+    hash and the symbol, so the same id means byte-identical code; the embedding model
+    and dimensions in `enriched_with` must also match, so a change of either is never
+    served stale vectors. These are the models' real earlier answers for exactly this
+    code.
+
+    With `need_description`, only chunks that have one qualify. Without it, a chunk
+    that has one is still preferred: it costs nothing more and searches better.
     """
+    import re
+
     from app.persistence import db
 
     if not chunk_ids:
         return {}
+    query: dict[str, Any] = {
+        "chunk_id": {"$in": chunk_ids},
+        "enriched_with": {"$regex": "\\|" + re.escape(embedding_tag()) + "$"},
+        "embedding": {"$type": "array"},
+    }
+    if need_description:
+        query["description"] = {"$type": "string"}
     database = await db.get_db()
     cursor = database[CHUNKS_COLLECTION].find(
-        {"chunk_id": {"$in": chunk_ids}, "enriched_with": enrichment_tag(),
-         "embedding": {"$type": "array"}, "description": {"$type": "string"}},
-        {"_id": 0, "chunk_id": 1, "description": 1, "embedding": 1},
+        query, {"_id": 0, "chunk_id": 1, "description": 1, "embedding": 1,
+                "enriched_with": 1},
     )
     found: dict[str, dict[str, Any]] = {}
     async for row in cursor:
-        found.setdefault(row["chunk_id"], row)
+        kept = found.get(row["chunk_id"])
+        if kept is None or (row.get("description") and not kept.get("description")):
+            found[row["chunk_id"]] = row
     return found
 
 

@@ -259,7 +259,10 @@ Documents and queries use different task types deliberately: a question and the 
 that answers it are not the same kind of text, and the model is trained to embed them
 differently.
 
-`description` is one sentence per chunk from `GEMINI_MODEL`. It is what bridges
+`description` is one sentence per chunk, from `GEMINI_DESCRIPTION_MODEL` when it is set
+and `GEMINI_MODEL` otherwise. **Imports skip it by default** (`INDEX_DESCRIPTIONS`, see
+[Quota budget](#quota-budget-for-demo-day)); `POST /repositories/{id}/index` adds it. It
+is what bridges
 vocabulary gaps — T-07 asks "where does the final customer bill get rounded?" and the
 answer is a function called `finalise_amount`.
 
@@ -348,8 +351,10 @@ Gemini key arrives after an import, when background indexing failed, or when the
 changes. It reads sources from the immutable snapshot, so it describes exactly the
 code the symbols were extracted from.
 
-`INDEX_ON_IMPORT=false` skips descriptions and embeddings at import, background ones
-included. Chunks are still
+`INDEX_DESCRIPTIONS` (default `false`) controls only the descriptions at import: off,
+chunks are embedded from their identifiers, docstring and source, with no
+`generate_content` call. `INDEX_ON_IMPORT=false` skips descriptions **and** embeddings at
+import, background ones included. Chunks are still
 built and stored, so keyword search works immediately — with no API key at all. The
 test suite sets it off: enrichment is two model calls per chunk, and the import tests
 import the fixture eleven times.
@@ -467,28 +472,59 @@ it sent, so compare that with the AI Studio usage page.
 
 ### What each action costs
 
-| Action | Embedding requests (texts) | `generate_content` |
+Gemini requests for a **first** import, i.e. code Atlas has not seen with these models.
+"Embeddings" counts requests, with texts in brackets; see the batching note above.
+
+| | Start of 24 Oct | After #61 (batching) | Now (default) |
+|---|---|---|---|
+| Import `legacy_orders`: descriptions | 40 (Argon) | 40 (Argon) | **0** |
+| Import `legacy_orders`: embeddings | 40 | 2 (40) | 2 (40) |
+| Import chess: descriptions | 122 (Argon) | 122 (Argon) | **0** |
+| Import chess: embeddings | 122 | 7 (122) | 7 (122) |
+| Vector or hybrid search, new query | 1 | 1 | 1 |
+| The same query again | 1 | 0 | 0 |
+| Keyword search | 0 | 0 | 0 |
+| Re-import of identical code | as first time | 0 | 0 |
+
+So a chess import goes from 244 requests (122 of them on the agent's model) to 7, with
+none on the agent's model. If Google counts every text in a batch, it is 122 embedding
+units instead of 7, still with no descriptions.
+
+The two settings, both read by `app/search/settings.py` from the environment or `.env`:
+
+| Setting | Default | Effect |
 |---|---|---|
-| Import `legacy_orders`, first time | 2 (40) | 40 |
-| Import chess, first time | 7 (122) | 122 |
-| Import identical code again, same database and models | **0** | **0** |
-| `POST /repositories/{id}/index` | 1 per 100 chunks | 1 per chunk |
-| Keyword search | 0 | 0 |
-| Vector or hybrid search, new query text | 1 (1) | 0 |
-| The same query again, same server process | 0 | 0 |
+| `INDEX_DESCRIPTIONS` | `false` | Off: import embeds chunks from identifiers, docstring and source, with no description call. On: one description per chunk at import, as before. |
+| `GEMINI_DESCRIPTION_MODEL` | unset | The model that writes descriptions. Unset: `GEMINI_MODEL`, as before. Set it to a Flash model so descriptions never spend the agent's quota. |
+
+Other costs:
+
+| Action | Embedding requests (texts) | Descriptions |
+|---|---|---|
+| `POST /repositories/{id}/index` (always adds descriptions) | 1 per 100 chunks | 1 per chunk, on the description model |
 | Restarting the backend | 0 | 0 |
-| `uv run pytest -m "not live"` | 0 | 0 |
+| `uv run pytest` (live tests are now deselected by default, Dev 2's #60) | 0 | 0 |
 | `uv run pytest -m live tests/integration/test_search_live.py`, cache empty | 6 (44) | 40 |
 | The same, cache primed | 0 | 0 |
+
+**The trade-off:** descriptions are what let "where does the final customer bill get
+rounded?" find `finalise_amount` (T-07). Without them, vector search works from the
+code's own words. To keep both the saving and the quality for the demo, import with the
+default, then run `POST /repositories/{id}/index` **once** for chess and
+`legacy_orders` with `GEMINI_DESCRIPTION_MODEL` set to a Flash model. That is 122 + 40
+Flash calls, none on Argon. Later re-imports of the same code reuse those
+descriptions for free.
 
 How the zeros are kept (#11):
 
 - **Re-imports reuse stored answers.** A chunk id is derived from the snapshot hash, so
-  the same id means byte-identical code. The background indexer copies the description
-  and embedding of any stored chunk with that id, but only when `enriched_with` (the
-  description model, embedding model and dimensions) also matches. Chunks indexed
-  before this landed have no `enriched_with`, so the **first** import of each project
-  after it pays once.
+  the same id means byte-identical code. The indexer copies the embedding (and the
+  description, if there is one) of any stored chunk with that id, but only when
+  `enriched_with` names the same embedding model and dimensions. `enriched_with` is
+  `<description model or none>|<embedding model>:<dimensions>`, because the description
+  is part of what was embedded. With `INDEX_DESCRIPTIONS` on, only chunks that have a
+  description qualify. Chunks indexed before #53 have no `enriched_with`, so the
+  **first** import of each project after it pays once.
 - **A repeated query reuses its vector.** Vectors are kept in memory per server process,
   up to 256 queries. A restart clears them.
 - **Chunks are embedded in batches.** See above. A batch the API rejects outright is
@@ -504,17 +540,20 @@ How the zeros are kept (#11):
 
 ### Don't, before recording
 
-1. **Don't run a plain `uv run pytest`.** With `.env` filled it runs all 56 live tests,
-   including real Gemini calls in Dev 1's and Dev 2's. Use `uv run pytest -m "not live"`.
-2. **Don't import into a new database, or change `GEMINI_MODEL`,
-   `GEMINI_EMBEDDING_MODEL` or `EMBEDDING_DIMENSIONS`.** Reuse matches on both, so either
-   makes the next chess import pay 122 descriptions and 122 embedded texts again.
-3. **Don't press re-index** on chess or `legacy_orders` unless indexing failed.
-4. **Don't run `--cache-clear` or delete `backend/.pytest_cache`.** That throws away the
+1. **Don't run live tests casually.** A plain `uv run pytest` now skips them (#60);
+   `-m live` brings them back, with real Gemini calls in Dev 1's and Dev 2's.
+2. **Don't import into a new database, or change `GEMINI_EMBEDDING_MODEL` or
+   `EMBEDDING_DIMENSIONS`.** Reuse matches on them, so either makes the next chess
+   import pay for its embeddings again.
+3. **Don't turn `INDEX_DESCRIPTIONS` on for the demo.** Add descriptions once with
+   `POST .../index` and a Flash `GEMINI_DESCRIPTION_MODEL`, as above.
+4. **Don't press re-index again** on chess or `legacy_orders` once they have
+   descriptions, unless indexing failed: re-index always re-describes.
+5. **Don't run `--cache-clear` or delete `backend/.pytest_cache`.** That throws away the
    recorded answers.
-5. **Rehearse with the scripted queries.** Each new query wording costs one embedding;
+6. **Rehearse with the scripted queries.** Each new query wording costs one embedding;
    keyword search costs nothing.
-6. **Import chess and `legacy_orders` before judging,** check `GET
+7. **Import chess and `legacy_orders` before judging,** check `GET
    /repositories/{id}/index` says `ready`, and don't make the first import of the day
    the one just before recording.
 
@@ -538,7 +577,8 @@ checkout's `backend/.pytest_cache`, so prime it on the machine that will run the
    uv run pytest -m live tests/integration/test_search_live.py -v -s
    ```
 
-   **Cost:** 40 `generate_content` (one description per chunk) and 6 embedding
+   **Cost:** 40 `generate_content` on the description model (this test turns
+   `INDEX_DESCRIPTIONS` on, because T-07 is about descriptions) and 6 embedding
    requests carrying 44 texts: 2 batches of 20 chunks, plus 4 distinct query texts.
    The 6 searches repeat two of the queries, and repeats replay. The last line prints
    `Gemini calls this run: {...}`, where `embeddings_called` is texts and

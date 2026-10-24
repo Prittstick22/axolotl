@@ -23,6 +23,7 @@ from typing import Any
 
 from app.config import get_settings
 from app.search.retry import describe, with_retries
+from app.search.settings import description_model
 
 log = logging.getLogger(__name__)
 
@@ -68,6 +69,9 @@ async def describe_chunks(chunks: list[dict[str, Any]]) -> list[str]:
 
     from google import genai
 
+    # GEMINI_DESCRIPTION_MODEL when set, so descriptions can use a cheap model and
+    # leave the agent's quota alone (#11); otherwise GEMINI_MODEL, as before.
+    model = description_model()
     client = genai.Client(api_key=settings.gemini_api_key)
     limit = asyncio.Semaphore(MAX_CONCURRENCY)
     # Once the quota is gone it is gone for every remaining chunk. Retrying each of
@@ -83,7 +87,7 @@ async def describe_chunks(chunks: list[dict[str, Any]]) -> list[str]:
 
             async def call() -> str:
                 response = await client.aio.models.generate_content(
-                    model=settings.gemini_model, contents=_prompt(chunk)
+                    model=model, contents=_prompt(chunk)
                 )
                 return (getattr(response, "text", "") or "").strip()
 

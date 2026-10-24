@@ -92,8 +92,14 @@ def gemini(monkeypatch) -> dict[str, Any]:
     # Descriptions and embeddings already in Atlas for identical code (#11).
     state["earlier"] = {}
 
-    async def find_enrichment(chunk_ids):
+    async def find_enrichment(chunk_ids, *, need_description=True):
         return {i: state["earlier"][i] for i in chunk_ids if i in state["earlier"]}
+
+    # These tests follow the descriptions path; test_description_savings.py covers
+    # the default, INDEX_DESCRIPTIONS off.
+    from app.search.settings import search_settings
+
+    monkeypatch.setattr(search_settings(), "index_descriptions", True)
 
     monkeypatch.setattr(search, "find_enrichment", find_enrichment)
     monkeypatch.setattr(pipeline, "_describe", describe)

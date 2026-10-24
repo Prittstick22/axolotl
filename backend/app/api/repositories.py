@@ -7,6 +7,7 @@
   GET  /repositories/{repo_id}/graph                ?level=module&run_id=
   GET  /repositories/{repo_id}/modules/{module_id}
   GET  /repositories/{repo_id}/symbols/{symbol_id}
+  GET  /runs/{run_id}/dependency-changes             legacy vs migrated (#34)
 
 Uploaded archives are **static-analysis only**: they import with `executable=False`
 and can never be migrated (§0.5). Only the allowlisted demo fixture is executable.
@@ -233,3 +234,18 @@ async def get_runtime(repo_id: str) -> dict:
 
     await ingestion.get_repository(repo_id)
     return inspect_runtime(ingestion.snapshot_path(repo_id))
+
+
+@router.get("/runs/{run_id}/dependency-changes")
+async def get_dependency_changes(run_id: str) -> dict[str, Any]:
+    """What the run did to the project's dependencies (#34).
+
+    Imports added, removed and renamed per module, Python 2 builtins replaced, graph
+    edges added and removed, third-party packages, and the declared Python version,
+    legacy snapshot vs the run's last accepted revision. Every item has a `basis`:
+    `static_ast` (read from the code), `py2_rename_table` (Python's documented
+    Python 2 -> 3 renames) or `name_match` (a heuristic name match).
+    """
+    from app.graph.changes import dependency_changes
+
+    return await dependency_changes(run_id)

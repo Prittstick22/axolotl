@@ -1,8 +1,8 @@
 # Will's introduction (#70)
 
 **Deliverable: talk track, followed by the three-minute demo.** Target: 1:00–1:30.
-This is ready to rehearse; it has not been timed out loud. The word-count estimate
-is not a rehearsal result. Complete the two timed runs in
+This is ready for Will to rehearse; his delivery has not been timed. The word-count
+estimate and synthetic practice audio are not human rehearsal results. Complete the two timed runs in
 [rehearsal-log.md](rehearsal-log.md), including the hand-off.
 The spoken track is 183 words: about 1:18 at 140 words/minute, before extra pauses.
 
@@ -44,6 +44,25 @@ Use the real run and speak naturally. Trim pauses or the search-mode list if a
 measured take exceeds 90 seconds. Do not rush the limitation sentence. No slides
 are required: the issue explicitly permits this talk-track format.
 
+## Spoken practice reference
+
+A synthetic reference was generated with Windows' Microsoft Hazel Desktop voice,
+rate 1, and measured at **84.63 seconds** from its WAV frame count (22,050 Hz mono).
+It fits the target slot and is for practicing pacing. It is not Will's voice, a
+human rehearsal, a product recording or evidence that a live migration completed.
+Listen for pronunciation and use the written script if the synthetic voice is unclear.
+
+To recreate it on Windows with that installed voice, from the repository root:
+
+```powershell
+powershell -NoProfile -File demo/make_practice_audio.ps1
+```
+
+The output is `.axolotl_workspaces/demo-preparation/pitch-reference.wav` (ignored
+by Git). The script refuses to overwrite an existing output; use `-OutputPath`
+with a new filename for another take. `-Voice` and `-Rate` can be changed; remeasure
+the resulting file if changed. Human rehearsal slots remain pending.
+
 ## Freeze check: every claim needs current evidence
 
 - **Will:** the named owner identified in #70 and [chess-demo.md](chess-demo.md).
@@ -56,8 +75,9 @@ are required: the issue explicitly permits this talk-track format.
   Gemini model only when its recorded run identity supports it.
 - **Dev 2 review, pending:** confirm target availability, real plan approval,
   dependency ordering, blocked-unit behavior, final verification and downloads on
-  the demonstrated build. #22 is implemented; #23 and target integration must land
-  before the live claims can be frozen. See [demo-script.md](demo-script.md).
+  the demonstrated build. #22 and #23 are merged; target enablement is PR #76.
+  Verify the deployed target and a real run before freezing live claims.
+  See [demo-script.md](demo-script.md).
 - **Atlas:** check current status and search responses. Say “native Atlas hybrid
   fusion” only when `native_hybrid` is true. See [mongodb-bounty.md](mongodb-bounty.md)
   for technical evidence, not for chess search rankings; its orders examples do

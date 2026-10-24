@@ -27,6 +27,13 @@ only with observed results. Keep secrets and held-out inputs out of this log.
 
 ## Two complete rehearsals required
 
+Preparation evidence, separate from the human rehearsals below: a synthetic
+Microsoft Hazel Desktop reference at rate 1 measured 84.63 seconds from its WAV
+frame count. The local readiness check failed because no demo API was reachable
+and no real repository/run IDs were supplied. Neither observation completes a
+rehearsal or a live-stack check. Both outputs are under the ignored local directory
+`.axolotl_workspaces/demo-preparation/`; the scripts regenerate them on a demo machine.
+
 Run the introduction and hand-off straight into the three-minute demo on the
 actual demo machine. Use a stopwatch and exercise the fallback at least once.
 Repeat after any material build/script change. Record failure honestly and fix it

@@ -299,6 +299,37 @@ export interface RunSecurity {
   warnings: string[];
 }
 
+export interface AskHistoryItem {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface AskCitation {
+  path: string;
+  start_line: number;
+  end_line: number;
+  symbol: string | null;
+  snippet: string;
+}
+
+export interface AskRetrieval {
+  tool: string;
+  query: string;
+  /** null for a tool that isn't a search */
+  mode_used: SearchMode | null;
+  native_hybrid: boolean | null;
+  hit_count: number;
+}
+
+export interface AskResponse {
+  answer: string;
+  grounded: boolean;
+  citations: AskCitation[];
+  retrieval: AskRetrieval[];
+  model: string;
+  truncated: boolean;
+}
+
 // ---------- docs (#39) ----------
 export interface DocsCallable {
   name: string;

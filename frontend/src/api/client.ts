@@ -8,6 +8,8 @@
 import type { FolderFile } from '../lib/folder';
 import type {
   ApiErrorBody,
+  AskHistoryItem,
+  AskResponse,
   Artefact,
   DemoFixture,
   DependencyChanges,
@@ -160,6 +162,11 @@ export function getIndexStatus(repoId: string): Promise<IndexStatus> {
 /** GET /api/v1/repositories/{repo_id}/search - 503 SEARCH_INDEX_NOT_READY while an index builds, never an empty result. */
 export function searchRepository(repoId: string, q: string, mode: SearchMode): Promise<SearchResults> {
   return apiFetch<SearchResults>(`${repo(repoId)}/search?${new URLSearchParams({ q, mode })}`);
+}
+
+/** POST /api/v1/repositories/{repo_id}/ask - request-only history and read-only retrieval (#123). */
+export function askRepository(repoId: string, question: string, history: AskHistoryItem[]): Promise<AskResponse> {
+  return post<AskResponse>(`${repo(repoId)}/ask`, { question, history });
 }
 
 /** GET /api/v1/runs/{run_id}/dependency-changes - legacy vs last accepted revision (#34). */

@@ -111,14 +111,23 @@ lands, a ZIP upload follows the existing static-analysis-only path; it must not 
 presented as an executable Python 2 migration.
 
 
-## UI upload flow
+## Importing chess
 
-Build a fresh ZIP with `python demo/package_chess.py` from the repo root. Upload
-`demo/chess-input.zip` in the UI; do not use the stale ZIP from the source folder.
-The generated archive is ignored by Git and contains source, setup.py, README, tests
-and visible `tests/cases.json`, with no hidden cases, caches or runtime binaries.
-Rebuild old archives and re-import the fixture to register the new cases. The
-existing exact-content trust check includes this visible JSON file.
+Chess is a built-in fixture (#81): choose **chess** on New Migration, the first option,
+or `POST /repositories/import` with `{"demo_fixture_id": "chess"}`.
+
+- **One repository for everyone (#82).** The id is derived from the fixture's content,
+  so importing chess again, from any laptop, returns the same repository with no
+  re-analysis, re-indexing or model calls. Import it once on the shared cluster and
+  give the team its id.
+- **It runs from any laptop (#83).** Snapshots stay on the machine that imported them,
+  except for built-in fixtures: a laptop with no copy rebuilds it from its own
+  `demo/chess` checkout. If `demo/chess` changes, the id changes, so a stale import is
+  never run against different code.
+
+A folder upload or a ZIP from `python demo/package_chess.py` still works and is still
+executable when it is an exact copy of `demo/chess`, but each upload is its own
+repository, with its own id, and runs only on the laptop that uploaded it.
 
 The UI reads declared Python requirements from `GET /repositories/{id}/runtime`,
 then displays **Python 2.7 (declared) -> Python 3.14 (desired)**, the real module

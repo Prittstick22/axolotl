@@ -31,6 +31,7 @@ from app.models.contracts import (
 from app.orchestration import events, ports, store
 from app.orchestration.controller import REVISION_BASELINE, UnitControllerImpl
 from app.orchestration.ids import new_run_id
+from app.orchestration.plans import require_snapshot
 from app.orchestration.scheduler import eligible_units, impacted_units, units_to_skip
 from app.orchestration.states import (
     TERMINAL_RUN_STATES,
@@ -65,6 +66,7 @@ async def start_run(plan_id: str) -> RunSummary:
             status_code=409,
             details={"plan_id": plan_id, "status": plan.status},
         )
+    require_snapshot(plan.repository_id)  # 409 SNAPSHOT_UNAVAILABLE, before any run
 
     # One active run per repository (#18). A double click used to start two runs, each
     # with its own Argon session, spending the quota twice and producing two competing

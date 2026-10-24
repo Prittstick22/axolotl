@@ -785,3 +785,20 @@ cancelling during baselining or unit migration did not. A cancelled run has usua
 verified some units; that work is real and the report is the record of it, verdict and
 NOT-A-PROOF statement included. The Report screen can rely on a report existing for any
 terminal run.
+
+### Additive: chess is a built-in fixture with one id per content (Dev 1, #81–#84)
+
+No model changes. Three behaviours:
+
+- **`GET /demo-fixtures` lists `chess` first**, then `legacy_orders`.
+- **A built-in fixture's `repository_id` is deterministic:** `repo_` + 12 hex, as
+  before, derived from the fixture id and its line-ending-normalised tree hash. Importing
+  the same fixture again returns the existing `RepositoryRecord`. Uploads keep random
+  ids.
+- **`snapshot_path` rebuilds a missing built-in fixture snapshot** from the checkout,
+  written with LF line endings so the bytes, and `snapshot_hash`, are the same on every
+  laptop. Uploads are still only on the machine that imported them (#26).
+
+And one error on two more endpoints: `POST /repositories/{id}/plans` and
+`POST /plans/{id}/runs` answer `409 SNAPSHOT_UNAVAILABLE` before any model call when this
+machine has no copy of the code.

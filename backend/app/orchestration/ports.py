@@ -76,6 +76,11 @@ async def get_repository(repo_id: str):
     return await _resolve("app.ingestion", "get_repository", "Dev 3")(repo_id)
 
 
+def snapshot_available(repo_id: str) -> bool:
+    """-> True when this machine holds the repository's code (#84)."""
+    return _resolve("app.ingestion", "snapshot_available", "Dev 3")(repo_id)
+
+
 async def get_graph(repo_id: str, run_id: str | None = None):
     """-> GraphPayload."""
     return await _resolve("app.graph", "get_graph", "Dev 3")(repo_id, run_id)

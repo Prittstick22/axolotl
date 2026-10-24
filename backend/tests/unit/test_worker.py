@@ -315,6 +315,7 @@ def world(monkeypatch):
                  "apply_patch", "verify_unit", "verify_final", "accept_workspace",
                  "run_unit_session", "diff", "narrate_report", "workspace_path"):
         monkeypatch.setattr(ports_module, name, getattr(w, name))
+    monkeypatch.setattr(ports_module, "snapshot_available", lambda repo_id: True)
 
     # Reports write to disk; keep the worker's call but make it a no-op here.
     async def no_report(run):
@@ -1107,3 +1108,15 @@ async def test_a_cancelled_run_reports_only_once(world, monkeypatch):
 
     await run_to_completion(world)
     assert count["n"] == 1, f"the report was generated {count['n']} times"
+
+
+async def test_a_run_is_refused_when_the_code_is_not_on_this_machine(world, monkeypatch):
+    """#84: refused before a run exists, so nothing is journalled or spent."""
+    monkeypatch.setattr(ports_module, "snapshot_available", lambda repo_id: False)
+
+    with pytest.raises(AppError) as caught:
+        await worker_module.start_run("plan_test000001")
+
+    assert caught.value.status_code == 409
+    assert caught.value.code == "SNAPSHOT_UNAVAILABLE"
+    assert world.runs == {}

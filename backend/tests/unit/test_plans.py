@@ -91,6 +91,7 @@ def world(monkeypatch):
     monkeypatch.setattr(ports_module, "files_by_module", files_by_module)
     monkeypatch.setattr(ports_module, "load_cases", load_cases)
     monkeypatch.setattr(ports_module, "get_repository", get_repository)
+    monkeypatch.setattr(ports_module, "snapshot_available", lambda repo_id: True)
     # No Argon: the deterministic order is used and said so in the rationale.
     monkeypatch.setattr(ports_module, "get_graph", unavailable)
     monkeypatch.setattr(ports_module, "propose_plan", unavailable)
@@ -264,3 +265,22 @@ async def test_a_python_2_plan_still_needs_an_executable_repository(world, monke
 
     assert caught.value.status_code == 409
     assert caught.value.code == "REPOSITORY_NOT_EXECUTABLE"
+
+
+async def test_no_argon_call_for_a_repository_whose_code_is_not_here(world, monkeypatch):
+    """#84: a plan for an import made on another laptop cost an Argon call, then its
+    run failed copying the baseline."""
+    from app.errors import AppError
+
+    async def must_not_ask(*args, **kwargs):
+        raise AssertionError("Argon was asked for a plan that can never run")
+
+    monkeypatch.setattr(ports_module, "propose_plan", must_not_ask)
+    monkeypatch.setattr(ports_module, "snapshot_available", lambda repo_id: False)
+
+    with pytest.raises(AppError) as caught:
+        await plans_module.create_plan(REPO, "modern_python3")
+
+    assert caught.value.status_code == 409
+    assert caught.value.code == "SNAPSHOT_UNAVAILABLE"
+    assert world["saved"] == []

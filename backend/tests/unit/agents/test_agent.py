@@ -292,6 +292,50 @@ async def test_a_daily_quota_fails_at_once_and_says_how_long(monkeypatch):
     wait.assert_not_awaited()
 
 
+class ServerError(Exception):
+    """The SDK's APIError shape for a 5xx: `status_code`, no retry delay."""
+
+    def __init__(self, status_code: int):
+        super().__init__(f"{status_code} UNAVAILABLE")
+        self.status_code = status_code
+
+
+@pytest.mark.parametrize("status", [500, 502, 503, 504])
+async def test_a_server_error_is_backed_off_and_retried(monkeypatch, status):
+    """#97: "503 UNAVAILABLE - high demand" used to end the unit's session at once."""
+    create = AsyncMock(side_effect=[ServerError(status), ServerError(status), DONE])
+    wait = AsyncMock()
+    monkeypatch.setattr("app.agents.gemini_client._wait", wait)
+
+    turn = await _client(create).turn("hello", instruction="test", tools=[])
+
+    assert turn.id == "int_1"
+    assert [c.args[0] for c in wait.call_args_list] == [2, 4]
+
+
+async def test_a_server_error_that_persists_is_reported_with_its_status(monkeypatch):
+    create = AsyncMock(side_effect=ServerError(503))
+    wait = AsyncMock()
+    monkeypatch.setattr("app.agents.gemini_client._wait", wait)
+
+    with pytest.raises(ModelUnavailable, match=r"still failing \(503\)"):
+        await _client(create).turn("hello", instruction="test", tools=[])
+
+    assert sum(c.args[0] for c in wait.call_args_list) <= gemini_client.RATE_LIMIT_WAIT_SECONDS
+
+
+async def test_a_client_error_is_not_retried(monkeypatch):
+    create = AsyncMock(side_effect=ServerError(400))
+    wait = AsyncMock()
+    monkeypatch.setattr("app.agents.gemini_client._wait", wait)
+
+    with pytest.raises(ModelUnavailable, match="status=400"):
+        await _client(create).turn("hello", instruction="test", tools=[])
+
+    assert create.await_count == 1
+    wait.assert_not_awaited()
+
+
 async def test_a_dropped_connection_is_retried_once():
     dropped = httpx.RemoteProtocolError("Server disconnected without sending a response.")
     create = AsyncMock(side_effect=[dropped, DONE])

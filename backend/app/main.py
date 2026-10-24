@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import plans_runs, repositories, search, system, targets
+from app.api import ask, plans_runs, repositories, search, system, targets
 from app.config import get_settings
 from app.errors import register_error_handlers
 from app.persistence import db
@@ -112,6 +112,7 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     # One router file per owner so nobody fights over merges (SHARED_CONTRACTS §2).
+    v1.include_router(ask.router)
     v1.include_router(system.router)
     v1.include_router(repositories.router)
     v1.include_router(search.router)

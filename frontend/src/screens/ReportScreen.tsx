@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useOutletContext, useParams, useSearchParams } from 'react-router-dom';
 
-import { API_BASE, ApiError, exportUrl, getDependencyChanges, getPlan, getReport, getRunDiff, listAllRunEvents } from '@/api/client';
+import { API_BASE, ApiError, exportUrl, getDependencyChanges, getPlan, getReport, getRunDiff, getRunSecurity, listAllRunEvents } from '@/api/client';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { narrativeBlocks } from '@/lib/narrative';
@@ -13,7 +13,7 @@ import { CLOSING_WAIT_MS, isLive, POLL_MS, useRun } from '@/lib/run';
 import { RUN_STATE, TONE_BORDER, TONE_TEXT, TONE_TINT } from '@/lib/status';
 import { changes as diffChanges } from '@/lib/diff';
 import { Field } from '@/screens/Overview';
-import type { MigrationPlan, RunEvent, RunReport, RunSummary } from '@/types/contracts';
+import type { MigrationPlan, RunEvent, RunReport, RunSummary, RunSecurity, SecurityPackages, SecurityTree } from '@/types/contracts';
 
 // worker.py's final_verdict: `completed` only when every unit and the final gates passed.
 const VERDICT_TEXT: Record<RunReport['verdict'], string> = {
@@ -107,6 +107,107 @@ function Downloads({ report }: { report: RunReport }) {
           No unit was accepted in this run, so the project is still the legacy code and there is nothing to download.
         </p>
       )}
+    </Panel>
+  );
+}
+
+function advisoryUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:' && parsed.hostname === 'osv.dev' ? parsed.href : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** security.py writes lower-case clauses; shown as sentences. */
+const sentence = (s: string) => `${s.charAt(0).toUpperCase()}${s.slice(1)}${/[.!?]$/.test(s) ? '' : '.'}`;
+
+function PackageChecks({ title, packages }: { title: string; packages: SecurityPackages }) {
+  const unchecked = packages.status === 'not_run' || packages.status === 'nothing_pinned';
+  return (
+    <section className="flex flex-col gap-2 border-t pt-3">
+      <h4 className="font-medium">{title}</h4>
+      <p role={packages.status === 'not_run' ? 'alert' : undefined} className={cn('text-sm', unchecked ? 'text-warning' : 'text-muted-foreground')}>
+        {sentence(packages.message)}
+        {packages.status === 'checked' && ' A clean result only covers these pinned versions.'}
+      </p>
+      {packages.unpinned.map((item) => (
+        <p key={`${item.name}-${item.source}`} className="text-sm text-warning">
+          <code className="font-mono">{item.name}</code>: {item.note}
+        </p>
+      ))}
+      {packages.checked.flatMap((item) => item.vulnerabilities.map((vulnerability) => (
+        <div key={`${item.name}-${item.version}-${vulnerability.id}`} className="rounded-sm border px-3 py-2 text-sm">
+          <p className="font-mono">{item.name} {item.version} · {vulnerability.id}</p>
+          {vulnerability.summary && <p className="mt-1">{vulnerability.summary}</p>}
+          <p className="text-muted-foreground">
+            Fixed version: {vulnerability.fixed_versions.length ? vulnerability.fixed_versions.join(', ') : 'Not stated'}
+          </p>
+          {advisoryUrl(vulnerability.url) && <a className="underline underline-offset-4" href={advisoryUrl(vulnerability.url)} target="_blank" rel="noreferrer">View advisory</a>}
+        </div>
+      )))}
+      {packages.warnings.map((warning) => <p key={warning} className="text-sm text-muted-foreground">{warning}</p>)}
+    </section>
+  );
+}
+
+function SecuritySection({ runId }: { runId: string }) {
+  const security = useQuery({ queryKey: ['run-security', runId], queryFn: () => getRunSecurity(runId) });
+  if (security.isPending) return <Panel title="Security"><p className="text-sm text-muted-foreground">Loading the security checks…</p></Panel>;
+  if (security.isError) {
+    return (
+      <Panel title="Security">
+        <p role="alert" className="text-sm text-failed">The security report could not be loaded: {security.error.message}</p>
+        <p className="text-sm text-muted-foreground">No result is inferred from a failed request.</p>
+      </Panel>
+    );
+  }
+  const result: RunSecurity = security.data;
+  const changeGroups = result.changes
+    ? [
+        ['Resolved package advisories', result.changes.fixed],
+        ['Introduced package advisories', result.changes.introduced],
+        ['Unchanged package advisories', result.changes.still_present],
+      ] as const
+    : [];
+  const runtime = (side: SecurityTree, label: string) => (
+    <p key={label} className="text-sm">
+      {label}: Python {side.runtime.declared_python ?? 'version not declared'}
+      {side.runtime.note && <span className="block text-warning">{side.runtime.note}</span>}
+    </p>
+  );
+  return (
+    <Panel title="Security">
+      <p className="text-sm text-muted-foreground">{result.disclaimer}</p>
+      <PackageChecks title="Legacy packages" packages={result.legacy.packages} />
+      {result.migrated && <PackageChecks title="Migrated packages" packages={result.migrated.packages} />}
+      {result.migrated && result.changes && (
+        <section className="flex flex-col gap-2 border-t pt-3">
+          <h4 className="font-medium">Known package advisory changes</h4>
+          {changeGroups.map(([label, items]) => (
+            <div key={label}>
+              <h5 className="text-sm font-medium">{label}</h5>
+              {items.length ? items.map((item) => (
+                <p key={`${item.package}-${item.id}`} className="text-sm">
+                  <code className="font-mono">{item.package} {item.version}</code> · {item.id}
+                  {advisoryUrl(item.url) && <> · <a className="underline underline-offset-4" href={advisoryUrl(item.url)} target="_blank" rel="noreferrer">Advisory</a></>}
+                </p>
+              )) : <p className="text-sm text-muted-foreground">None reported.</p>}
+            </div>
+          ))}
+        </section>
+      )}
+      <section className="flex flex-col gap-2 border-t pt-3">
+        <h4 className="font-medium">Runtime</h4>
+        {runtime(result.legacy, 'Legacy')}
+        {result.migrated && runtime(result.migrated, 'Migrated')}
+      </section>
+      <section className="flex flex-col gap-1 border-t pt-3">
+        <h4 className="font-medium">Code scan</h4>
+        <p className="text-sm text-muted-foreground">No code scan ran. Only the declared packages and the Python runtime are checked.</p>
+      </section>
+      {result.warnings.map((warning) => <p key={warning} className="text-sm text-warning">{warning}</p>)}
     </Panel>
   );
 }
@@ -290,6 +391,7 @@ function Report({ report, plan, run, repoId, search }: { report: RunReport; plan
           </Panel>
         )}
         <Downloads report={report} />
+        <SecuritySection runId={report.run_id} />
         <Narrative text={report.narrative} />
       </div>
     </div>

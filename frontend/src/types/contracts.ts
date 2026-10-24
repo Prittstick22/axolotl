@@ -254,6 +254,51 @@ export interface DependencyChanges {
   warnings: string[];
 }
 
+export interface SecurityVulnerability {
+  id: string;
+  aliases: string[];
+  summary: string | null;
+  fixed_versions: string[];
+  url: string;
+}
+
+export interface CheckedPackage {
+  name: string;
+  version: string;
+  source: string;
+  vulnerabilities: SecurityVulnerability[];
+}
+
+export interface SecurityPackages {
+  status: 'checked' | 'no_packages' | 'nothing_pinned' | 'not_run';
+  message: string;
+  checked: CheckedPackage[];
+  unpinned: { name: string; specifier: string | null; source: string; note: string }[];
+  warnings: string[];
+}
+
+export interface SecurityTree {
+  packages: SecurityPackages;
+  runtime: { declared_python: string | null; evidence: string[]; note: string | null };
+}
+
+export interface RunSecurity {
+  run_id: string;
+  repository_id: string;
+  base_revision: string;
+  revision: string | null;
+  disclaimer: string;
+  legacy: SecurityTree;
+  migrated: SecurityTree | null;
+  changes: {
+    fixed: { package: string; version: string; id: string; url: string; fixed_versions: string[] }[];
+    introduced: { package: string; version: string; id: string; url: string; fixed_versions: string[] }[];
+    still_present: { package: string; version: string; id: string; url: string; fixed_versions: string[] }[];
+    note: string | null;
+  } | null;
+  warnings: string[];
+}
+
 // ---------- docs (#39) ----------
 export interface DocsCallable {
   name: string;

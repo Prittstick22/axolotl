@@ -23,6 +23,7 @@ import type {
   RunDocs,
   RunEvent,
   RunReport,
+  RunSecurity,
   RunSummary,
   RuntimeInfo,
   SearchMode,
@@ -235,6 +236,11 @@ export async function listAllRunEvents(runId: string): Promise<RunEvent[]> {
 /** GET /api/v1/runs/{run_id}/report - 404 REPORT_NOT_READY until the worker writes it. */
 export function getReport(runId: string): Promise<RunReport> {
   return apiFetch<RunReport>(`${run(runId)}/report`);
+}
+
+/** GET /api/v1/runs/{run_id}/security - package and runtime checks for both revisions (#42). */
+export function getRunSecurity(runId: string): Promise<RunSecurity> {
+  return apiFetch<RunSecurity>(`${run(runId)}/security`);
 }
 
 export function listArtefacts(runId: string): Promise<Artefact[]> {

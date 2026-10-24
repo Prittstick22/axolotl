@@ -3,9 +3,10 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 
-from app.agents import sessions
+from app.agents import gemini_client, sessions
 from app.agents.contexts import UnitSessionContext
 from app.agents.gemini_client import (
     GeminiClient,
@@ -217,20 +218,129 @@ def test_delimiter_escape_and_path_guard():
     assert not safe_path("chess\\board.py")
 
 
-async def test_rate_limit_retries_exactly_four_times(monkeypatch):
-    class RateLimit(Exception):
-        code = 429
+class RateLimit(Exception):
+    """The shape of the SDK's RateLimitError: `status_code`, `body`, `response`."""
 
-    create = AsyncMock(side_effect=RateLimit())
-    client = GeminiClient(
+    status_code = 429
+
+    def __init__(self, retry_delay: str | None = None, retry_after: str | None = None):
+        super().__init__("429")
+        details = [] if retry_delay is None else [
+            {"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": retry_delay}
+        ]
+        self.body = {"error": {"code": 429, "details": details}}
+        self.response = SimpleNamespace(
+            headers={} if retry_after is None else {"retry-after": retry_after}
+        )
+
+
+def _client(create):
+    return GeminiClient(
         SimpleNamespace(aio=SimpleNamespace(interactions=SimpleNamespace(create=create)))
     )
-    sleep = AsyncMock()
-    monkeypatch.setattr("app.agents.gemini_client.asyncio.sleep", sleep)
-    with pytest.raises(ModelUnavailable):
+
+
+DONE = {"id": "int_1", "status": "completed", "steps": []}
+
+
+async def test_a_429_waits_for_the_retry_delay_it_asks_for(monkeypatch):
+    """#47: a per-minute quota asks for tens of seconds; 1, 2 and 4 s never covered it."""
+    create = AsyncMock(side_effect=[RateLimit("30s"), DONE])
+    wait = AsyncMock()
+    monkeypatch.setattr("app.agents.gemini_client._wait", wait)
+
+    turn = await _client(create).turn("hello", instruction="test", tools=[])
+
+    assert turn.id == "int_1"
+    assert [c.args[0] for c in wait.call_args_list] == [31]
+
+
+async def test_a_429_without_a_body_delay_uses_retry_after(monkeypatch):
+    create = AsyncMock(side_effect=[RateLimit(retry_after="12"), DONE])
+    wait = AsyncMock()
+    monkeypatch.setattr("app.agents.gemini_client._wait", wait)
+
+    await _client(create).turn("hello", instruction="test", tools=[])
+
+    assert [c.args[0] for c in wait.call_args_list] == [13]
+
+
+async def test_a_429_naming_no_delay_backs_off_for_up_to_a_minute_and_a_half(monkeypatch):
+    create = AsyncMock(side_effect=RateLimit())
+    wait = AsyncMock()
+    monkeypatch.setattr("app.agents.gemini_client._wait", wait)
+
+    with pytest.raises(ModelUnavailable, match="still rate-limited"):
+        await _client(create).turn("hello", instruction="test", tools=[])
+
+    waits = [c.args[0] for c in wait.call_args_list]
+    assert waits == [2, 4, 8, 16, 32]
+    assert sum(waits) <= gemini_client.RATE_LIMIT_WAIT_SECONDS
+    assert create.await_count == len(waits) + 1
+
+
+async def test_a_daily_quota_fails_at_once_and_says_how_long(monkeypatch):
+    """The morning of 24 Oct: a 429 asking for 64610 s. Waiting would stall the run."""
+    create = AsyncMock(side_effect=RateLimit("64610s"))
+    wait = AsyncMock()
+    monkeypatch.setattr("app.agents.gemini_client._wait", wait)
+
+    with pytest.raises(ModelUnavailable, match=r"quota exhausted .* 17h 56m"):
+        await _client(create).turn("hello", instruction="test", tools=[])
+
+    assert create.await_count == 1
+    wait.assert_not_awaited()
+
+
+async def test_a_dropped_connection_is_retried_once():
+    dropped = httpx.RemoteProtocolError("Server disconnected without sending a response.")
+    create = AsyncMock(side_effect=[dropped, DONE])
+
+    turn = await _client(create).turn("hello", instruction="test", tools=[])
+
+    assert turn.id == "int_1"
+    assert create.await_count == 2
+
+
+async def test_a_connection_that_drops_twice_is_reported():
+    dropped = httpx.RemoteProtocolError("Server disconnected without sending a response.")
+    create = AsyncMock(side_effect=[dropped, dropped, DONE])
+
+    with pytest.raises(ModelUnavailable, match="RemoteProtocolError"):
+        await _client(create).turn("hello", instruction="test", tools=[])
+
+    assert create.await_count == 2
+
+
+async def test_the_sdk_no_longer_retries_behind_our_back(monkeypatch):
+    """Through the real SDK: one request per attempt, and our wait reads the body's delay.
+
+    With the SDK's default retries, this 429 was sent four times before the client
+    saw it, and the body's retryDelay was never read.
+    """
+    from google import genai
+    from google.genai import types
+
+    requests: list[str] = []
+    body = {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED", "details": [
+        {"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "5s"}]}}
+
+    def handler(request):
+        requests.append(request.url.path)
+        return httpx.Response(429, json=body)
+
+    sdk = genai.Client(api_key="offline", http_options=types.HttpOptions(
+        httpx_async_client=httpx.AsyncClient(transport=httpx.MockTransport(handler))))
+    wait = AsyncMock()
+    monkeypatch.setattr("app.agents.gemini_client._wait", wait)
+    monkeypatch.setattr(gemini_client, "RATE_LIMIT_WAIT_SECONDS", 10)
+
+    client = GeminiClient(gemini_client._without_sdk_retries(sdk))
+    with pytest.raises(ModelUnavailable, match="still rate-limited"):
         await client.turn("hello", instruction="test", tools=[])
-    assert create.await_count == 4
-    assert [c.args[0] for c in sleep.call_args_list] == [1, 2, 4]
+
+    assert len(requests) == 2
+    assert [c.args[0] for c in wait.call_args_list] == [6]
 
 
 async def test_timeout_is_not_retried():

@@ -58,6 +58,10 @@ INTEGRATION_UNAVAILABLE = "INTEGRATION_UNAVAILABLE"
 # repository imported on someone else's laptop has no snapshot here. Distinct from
 # NOT_FOUND, which would say the repository does not exist - it does, in Atlas.
 SNAPSHOT_UNAVAILABLE = "SNAPSHOT_UNAVAILABLE"
+# The model was called and failed: a spent quota, a rate limit that outlasted the
+# client's wait, a dropped connection. Distinct from INTEGRATION_UNAVAILABLE, which
+# means the agent is not wired up at all (#47).
+MODEL_UNAVAILABLE = "MODEL_UNAVAILABLE"
 
 
 def _envelope(code: str, message: str, details: dict[str, Any] | None = None) -> dict[str, Any]:

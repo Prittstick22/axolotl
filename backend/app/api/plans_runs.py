@@ -349,6 +349,20 @@ async def get_run_report(run_id: str) -> RunReport:
     return report
 
 
+@router.get("/runs/{run_id}/summary")
+async def get_run_summary(run_id: str) -> dict[str, Any]:
+    """#35: one overview of what the run changed, before the Report's detail.
+
+    Per unit: outcome, attempts, checks run, counterexamples, lines added and removed,
+    and Argon's own summary of its patch (labelled model-written). Totals, the declared
+    Python version before and after, dependency changes and the report's caveats.
+    Every number is read from the report and the journal; 404 until the report exists.
+    """
+    from app.reports.summary import run_summary
+
+    return await run_summary(run_id)
+
+
 # --------------------------------------------------------------------------
 # artefacts
 # --------------------------------------------------------------------------
@@ -427,7 +441,15 @@ async def export_run(run_id: str) -> FileResponse:
     except Exception as exc:  # noqa: BLE001 - the docs are extra; never fail the export
         log.warning("export of %s ships without docs: %s", run_id, exc)
         docs = None
+    try:
+        from app.reports.summary import run_summary
+
+        summary = (await run_summary(run_id))["markdown"]
+    except Exception as exc:  # noqa: BLE001 - the summary is extra too (#35)
+        log.warning("export of %s ships without a summary: %s", run_id, exc)
+        summary = None
     path = await artefacts.write_export(
-        report, await store.get_plan(run.plan_id), revision, tree, docs=docs,
+        report, await store.get_plan(run.plan_id), revision, tree,
+        docs=docs, summary=summary,
     )
     return FileResponse(path, filename=f"{run_id}-migrated.zip")

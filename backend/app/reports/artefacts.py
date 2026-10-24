@@ -120,7 +120,7 @@ async def write_archive_artefact(
 
 async def write_export(
     report: RunReport, plan: MigrationPlan, revision: str, tree: Path,
-    docs: dict[str, str] | None = None,
+    docs: dict[str, str] | None = None, summary: str | None = None,
 ) -> Path:
     """#40: the migrated project at `revision`, with the run's files under `axolotl/`.
 
@@ -134,7 +134,8 @@ async def write_export(
 
     `docs` (#39), when given, is the run's module documentation as Markdown files,
     written under `axolotl/docs/`. It holds only what is already generated: building
-    an export never calls a model.
+    an export never calls a model. `summary` (#35), when given, is the run's migration
+    summary, written as `axolotl/SUMMARY.md`.
     """
     path = artefact_root(report.run_id) / "migrated_project.zip"
 
@@ -147,6 +148,8 @@ async def write_export(
              migration_notes(report, plan, revision).encode())
         _add(archive, "axolotl/report.json", json.dumps(
             report.model_dump(mode="json"), indent=2, sort_keys=True).encode())
+        if summary:
+            _add(archive, "axolotl/SUMMARY.md", summary.encode())
         for name, text in sorted((docs or {}).items()):
             _add(archive, f"axolotl/docs/{name}", text.encode())
     return path

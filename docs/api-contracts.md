@@ -225,10 +225,25 @@ Sets a flag the worker checks between steps. 409 `RUN_ALREADY_FINISHED` on a ter
 `narrative` is the only model-written prose and is labelled as such.
 `coverage_caveats` always states that agreement on N cases is not a proof of equivalence.
 
+### ✅ `GET /runs/{run_id}/summary` → migration summary (#35)
+One overview of what the run changed. 404 `REPORT_NOT_READY` until the report exists.
+- `units[]`: `{unit_id, paths, status, attempts, accepted_revision, tests: {passed,
+  failed, inconclusive, gates}, counterexamples: {found, resolved}, lines: {added,
+  removed} | null, argon_summary: {text, basis: "model_written", accepted} | null}`.
+- `totals`: units, verified, blocked, skipped, files changed, lines added and removed,
+  the report's test and counterexample counts, and `final_integration`.
+- `python: {before, after}`, `dependencies` (from #34), `caveats`, `limitations`,
+  `basis` per section, `warnings`, and `markdown` (also `axolotl/SUMMARY.md` in the export).
+- Tests run per unit are the last `gate_result` per gate, so a repair isn't counted
+  twice; with the final-integration gate they sum to the report's `tests_passed`.
+- `lines`, `python` and `dependencies` need the run's trees: on another machine they
+  are `null` with a warning, and everything from the report and journal still answers.
+
 ### ✅ `GET /runs/{run_id}/artefacts` → `[{artefact_id, kind, sha256, download_url}]`
 ### ✅ `GET /artefacts/{artefact_id}/download` → file stream
 ### ✅ `GET /runs/{run_id}/export` → ZIP of the migrated project (#40)
-The final accepted tree with `axolotl/MIGRATION.md`, `report.json` and `migration.patch`.
+The final accepted tree with `axolotl/MIGRATION.md`, `report.json`, `SUMMARY.md` (#35)
+and `docs/` (#39). Not the patch (#133): that stays its own artefact.
 Built on request, not listed as an artefact. 404 `REPORT_NOT_READY` before the report,
 404 `ARTEFACT_NOT_FOUND` when no unit was accepted or the tree is gone.
 

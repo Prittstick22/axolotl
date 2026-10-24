@@ -867,3 +867,14 @@ Facts are computed from the trees on request and never stored, like #34.
 **For Dev 5 (#130):** each module has `legacy` and, on a run, `migrated`, each with
 structured `facts` and a ready-made `markdown`. Model-written text is labelled in both
 (`purpose.basis: model_generated`, and Argon's `change.summary`).
+
+### Additive: migration summary (Dev 1, #35)
+
+One new endpoint, `GET /runs/{run_id}/summary`, so it merges immediately under §11.3.
+Nothing is stored and no model is called: it is computed from the `RunReport` and the
+run's journal, plus the diff and #34's tree comparison when the trees are on this
+machine. Shape in `docs/api-contracts.md`.
+
+**For Dev 5 (#129):** per unit, `argon_summary` carries `basis: "model_written"` and
+`accepted`; show it labelled. `caveats` and `limitations` are the report's own, to be
+shown uncollapsed. `lines` is `null`, not 0, when the trees are elsewhere.

@@ -1979,3 +1979,25 @@ ruff clean.
 Found on the way, not fixed here: `dotted_name_for` turns `local_chess/__main__.py` into
 `local_chess..main.`, so its `from .cli import ConsoleUI` resolves to the package
 instead of `local_chess/cli.py`.
+
+## 24 Oct 2026 — Dev 1: migration summary (#35)
+
+`GET /runs/{run_id}/summary`: one overview of what a run changed, for the screen in
+#129 and as `axolotl/SUMMARY.md` in the export.
+
+- **Every number is already recorded.** Outcome and attempts come from the report.
+  Checks per unit are the last `gate_result` per gate (the report builder's own
+  `_final_gate_results`, so a repaired unit isn't counted twice). Counterexamples are
+  per unit, resolved only where the unit passed. Argon's summary is the last
+  `patch_proposed` (the accepted patch for a unit that passed), labelled model-written.
+- **Lines added and removed** are counted from the same unified diff the Changes screen
+  shows, excluding file headers. **Python before and after, and the dependency changes,**
+  come from #34's `compare_trees`.
+- **On another laptop** the trees aren't there, so lines, Python and dependencies are
+  `null` with a warning; the report and journal parts still answer. It's never a 500.
+
+Live on `run_70e126c3acf2`: 14/14 verified, 14 files, +136/-59 lines, and checks per
+unit plus the final gate sum to the report's 288. Python `2.7 -> >=3.10`,
+`raw_input -> input`. 0 model calls. The export is now 51 files with `SUMMARY.md`.
+963 offline backend tests (10 new; counting every gate result instead of the last per
+gate fails one), ruff clean.

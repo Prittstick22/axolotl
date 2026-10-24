@@ -307,6 +307,22 @@ async def test_the_export_carries_the_module_docs_under_axolotl(artefact_dir, tm
         assert "axolotl/docs/README.md" in archive.namelist()
 
 
+async def test_the_export_carries_the_migration_summary(artefact_dir, tmp_path):
+    """#35: the summary it is handed is axolotl/SUMMARY.md."""
+    import zipfile
+
+    tree = tmp_path / "accepted"
+    tree.mkdir()
+    (tree / "pricing.py").write_text("x = 1\n", encoding="utf-8")
+
+    report, plan = make_export_inputs()
+    path = await artefacts.write_export(report, plan, REVISION, tree,
+                                        summary="# Migration summary\n")
+
+    with zipfile.ZipFile(path) as archive:
+        assert archive.read("axolotl/SUMMARY.md") == b"# Migration summary\n"
+
+
 def test_a_partial_run_says_which_files_are_still_legacy():
     report, plan = make_export_inputs()
     notes = artefacts.migration_notes(report, plan, REVISION)

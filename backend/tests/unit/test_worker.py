@@ -128,6 +128,16 @@ class World:
     async def supersede_open_plans(self, repo_id, except_plan_id):
         return 0
 
+    async def list_unfinished_runs(self):
+        """Non-terminal runs, as the real store's query returns them (#17)."""
+        from app.models.contracts import RunSummary
+        from app.orchestration.states import TERMINAL_RUN_STATES
+
+        return [
+            RunSummary(**document) for document in self.runs.values()
+            if document["state"] not in TERMINAL_RUN_STATES
+        ]
+
     async def save_artefact(self, artefact):
         self.artefacts.append(artefact)
         return artefact
@@ -295,7 +305,8 @@ def world(monkeypatch):
     w = World(make_plan())
 
     for name in ("get_plan", "save_plan", "save_run", "get_run",
-                 "supersede_open_plans", "save_artefact", "list_artefacts"):
+                 "supersede_open_plans", "save_artefact", "list_artefacts",
+                 "list_unfinished_runs"):
         monkeypatch.setattr(store_module, name, getattr(w, name))
     for name in ("append_event", "list_events"):
         monkeypatch.setattr(events_module, name, getattr(w, name))
@@ -815,3 +826,154 @@ async def test_a_verified_session_records_no_error_and_no_block(world, monkeypat
     assert run.units_verified == 6
     assert not [e for e in world.events if e["event_type"] == "error"]
     assert not [e for e in world.events if e["event_type"] == "unit_blocked"]
+
+
+# --------------------------------------------------------------------------
+# #16: a run's closing event is journalled before it reads terminal
+# --------------------------------------------------------------------------
+
+def kinds_of(world) -> list[str]:
+    return [e["event_type"] for e in world.events]
+
+
+async def test_the_report_is_journalled_before_the_run_reads_completed(
+    world, monkeypatch
+):
+    """§9.3 says a client polls only while the run is non-terminal, so a client that
+    does exactly that used to stop before `report_generated` - 19 s before it in
+    run_bb0da2e79534 - and never see it.
+    """
+    async def generate_report(run):
+        await world.append_event(run.run_id, "report_generated",
+                                 payload={"artefact_ids": []})
+
+    monkeypatch.setattr(worker_module, "_generate_report", generate_report)
+
+    run = await run_to_completion(world)
+    kinds = kinds_of(world)
+
+    assert run.state == "completed"
+    assert "report_generated" in kinds, "no closing event was recorded"
+    # The run document only reads terminal after the report is in the journal, so the
+    # terminal state change is the last event of the run.
+    assert kinds.index("report_generated") < max(
+        i for i, k in enumerate(kinds) if k == "run_state_changed"
+    )
+    assert kinds[-1] == "run_state_changed"
+
+
+async def test_a_failed_run_journals_why_before_it_reads_failed(world):
+    world.baseline_available = False
+
+    run = await run_to_completion(world)
+    kinds = kinds_of(world)
+
+    assert run.state == "failed"
+    assert "error" in kinds, "the run failed without saying why"
+    assert kinds.index("error") < max(
+        i for i, k in enumerate(kinds) if k == "run_state_changed"
+    ), "the run reached its terminal state before saying why"
+
+
+async def test_a_cancelled_run_journals_why_before_it_reads_cancelled(world):
+    world.cancel_after_baseline = True
+
+    run = await run_to_completion(world)
+    kinds = kinds_of(world)
+
+    assert run.state == "cancelled"
+    cancelled = [e for e in world.events
+                 if e["event_type"] == "error"
+                 and e["payload"].get("code") == "RUN_CANCELLED"]
+    assert cancelled, "a cancelled run never said so"
+    assert kinds.index("error") < max(
+        i for i, k in enumerate(kinds) if k == "run_state_changed"
+    )
+
+
+# --------------------------------------------------------------------------
+# #32: attempts is right during the run, not only after it
+# --------------------------------------------------------------------------
+
+async def test_attempts_is_written_through_while_a_unit_repairs(world, monkeypatch):
+    """The summary said `repairing` with `attempts: 0` for a whole minute in
+    run_eb826f4da0d5, because attempts was set only once the session ended."""
+    seen: list[tuple[str, int]] = []
+
+    async def watchful_session(context, controller):
+        while controller.patch_attempts_remaining() > 0:
+            await controller.submit_patch(PatchProposal(
+                unit_id=context.unit.unit_id,
+                files=[FilePatch(path=p, new_content="x = 1\n")
+                       for p in context.unit.file_paths],
+                summary="try", rationale="types",
+            ))
+            await controller.run_verification()
+            # Mid-session: what the document says now is what the Run screen shows.
+            run = await store_module.get_run(controller.run_id)
+            for state in run.units:
+                if state.unit_id == context.unit.unit_id:
+                    seen.append((state.status, state.attempts))
+        return UnitSessionOutcome(ended_because="budget_exhausted")
+
+    monkeypatch.setattr(ports_module, "run_unit_session", watchful_session)
+    world.verdicts = {"unit_pricing": [False, False, False]}
+
+    await run_to_completion(world)
+
+    assert seen, "the session never looked at the document"
+    assert all(attempts >= 1 for _status, attempts in seen), (
+        f"attempts was still 0 after a patch had been applied: {seen}"
+    )
+    # It counts up rather than sticking at 1.
+    assert max(attempts for _status, attempts in seen) > 1
+
+
+# --------------------------------------------------------------------------
+# #17: an interrupted run releases its units and says what happened
+# --------------------------------------------------------------------------
+
+async def test_an_interrupted_run_releases_its_units_and_journals_why(world):
+    """A bulk update used to flip the run to `failed` and leave its units at
+    `migrating` and `queued`, so the Run screen showed a failed run whose graph still
+    said "Migrating" and whose event log simply stopped.
+    """
+    summary = await worker_module.start_run("plan_test000001")
+    task = worker_module._tasks.get(summary.run_id)
+    if task is not None:
+        await task
+
+    # Put it back mid-flight, as a restart would have left it.
+    document = world.runs[summary.run_id]
+    document["state"] = "migrating"
+    document["current_unit"] = "unit_pricing"
+    for unit in document["units"]:
+        unit["status"] = "migrating" if unit["unit_id"] == "unit_pricing" else "queued"
+    world.events.clear()
+
+    marked = await worker_module.mark_interrupted_runs()
+
+    assert marked == [summary.run_id]
+    run = await store_module.get_run(summary.run_id)
+    assert run.state == "failed"
+    assert run.error == store_module.INTERRUPTED
+    assert run.current_unit is None
+    assert {u.status for u in run.units} == {"skipped"}, (
+        "a unit was left mid-flight inside a terminal run"
+    )
+
+    kinds = kinds_of(world)
+    assert "unit_blocked" in kinds, "nothing in the journal explains the skips"
+    assert any(e["payload"].get("code") == "RUN_INTERRUPTED"
+               for e in world.events if e["event_type"] == "error")
+    assert kinds.index("error") < max(
+        i for i, k in enumerate(kinds) if k == "run_state_changed"
+    )
+
+
+async def test_a_finished_run_is_left_alone_on_startup(world):
+    await run_to_completion(world)
+    states_before = {rid: doc["state"] for rid, doc in world.runs.items()}
+
+    assert await worker_module.mark_interrupted_runs() == []
+    assert {rid: doc["state"] for rid, doc in world.runs.items()} == states_before

@@ -112,8 +112,49 @@ async def cancel_run(run_id: str) -> RunSummary:
 
 
 async def mark_interrupted_runs() -> list[str]:
-    """Called from the app lifespan. Honest, not resumed."""
-    return await store.mark_interrupted_runs()
+    """Called from the app lifespan. Honest, not resumed.
+
+    Fail-clean over resume (Spec §6.2 allows either): a resumed run would have no live
+    workspace and no agent session, and claiming otherwise would be a lie about what
+    was verified.
+
+    Ending it means more than the run's own state (#17). A bulk update used to flip
+    the run to `failed` and leave its units at `migrating` and `queued`, keep
+    `current_unit`, and journal nothing - so the Run screen showed a failed run whose
+    graph still said "Migrating" and whose event log simply stopped. This does what
+    cancellation does, through the same helpers, so the two cannot drift.
+    """
+    interrupted: list[str] = []
+
+    for run in await store.list_unfinished_runs():
+        for state in list(run.units):
+            if state.status in TERMINAL_UNIT_STATUSES:
+                continue
+            # Through _set_unit so each change is validated and lands in the journal:
+            # writing straight onto the document would leave the audit trail (T-15)
+            # claiming those units were still running.
+            await _set_unit(run, state.unit_id, "skipped")
+            await events.append_event(
+                run.run_id, "unit_blocked", unit_id=state.unit_id,
+                payload={"reason": "the backend restarted before this unit finished",
+                         "verification_id": None},
+            )
+
+        run.current_unit = None
+        run.error = events.truncate(events.redact(store.INTERRUPTED))
+        await _save(run)
+        # Before the terminal transition, like every other ending (#16).
+        await events.append_event(
+            run.run_id, "error",
+            payload={"code": "RUN_INTERRUPTED", "message": store.INTERRUPTED},
+        )
+        await _transition(run, "failed")
+        interrupted.append(run.run_id)
+
+    if interrupted:
+        log.warning("marked %d interrupted run(s) failed: %s",
+                    len(interrupted), interrupted)
+    return interrupted
 
 
 async def _runner_mode() -> str:

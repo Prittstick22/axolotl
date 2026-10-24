@@ -251,10 +251,18 @@ async def test_secrets_are_redacted_before_they_reach_the_database(live_db):
 # --------------------------------------------------------------------------
 
 async def test_interrupted_runs_are_marked_failed_on_startup(live_db):
+    """Now through the worker, which also releases the units and journals why (#17).
+
+    The marking used to be a bulk update in `store`, which left the units at
+    `migrating` and `queued` inside a failed run.
+    """
+    from app.orchestration import events as events_module
+    from app.orchestration import worker as worker_module
+
     await store_module.save_run(make_run("run_live_alive", state="migrating"))
     await store_module.save_run(make_run("run_live_done", state="completed"))
 
-    marked = await store_module.mark_interrupted_runs()
+    marked = await worker_module.mark_interrupted_runs()
 
     assert "run_live_alive" in marked
     assert "run_live_done" not in marked
@@ -262,6 +270,17 @@ async def test_interrupted_runs_are_marked_failed_on_startup(live_db):
     interrupted = await store_module.get_run("run_live_alive")
     assert interrupted.state == "failed"
     assert interrupted.error == store_module.INTERRUPTED
+    # No unit is left mid-flight inside a terminal run.
+    assert [u.status for u in interrupted.units] == ["skipped"]
+    assert interrupted.current_unit is None
+
+    journal = await events_module.list_all_events("run_live_alive")
+    kinds = [e.event_type for e in journal]
+    assert "unit_blocked" in kinds, "the event log just stopped"
+    assert any(e.event_type == "error"
+               and e.payload.get("code") == "RUN_INTERRUPTED" for e in journal)
+    # The closing event precedes the terminal transition (#16).
+    assert kinds.index("error") < kinds.index("run_state_changed")
 
     finished = await store_module.get_run("run_live_done")
     assert finished.state == "completed"

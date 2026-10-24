@@ -114,27 +114,20 @@ async def list_runs(limit: int = 50) -> list[RunSummary]:
     return [RunSummary(**document) async for document in cursor]
 
 
-async def mark_interrupted_runs() -> list[str]:
-    """Startup: a run left mid-flight did not survive the restart, so say so.
+async def list_unfinished_runs() -> list[RunSummary]:
+    """Runs that are not in a terminal state. On startup, these did not survive.
 
-    The brief chooses fail-clean over resume (Spec §6.2 allows either): a resumed run
-    would have no live workspace or agent session, and claiming otherwise would be a
-    lie about what was verified.
+    Only the query lives here. `worker.mark_interrupted_runs` ends them, because
+    ending a run means moving its units and journalling why, and the worker is where
+    both of those already happen - once, for cancellation and interruption alike
+    (#17). A bulk `update_many` here would be a second way to end a run, free to
+    disagree with the first.
     """
     database = await db.get_db()
-    stale = database[RUNS].find(
-        {"state": {"$nin": sorted(TERMINAL_RUN_STATES)}}, {"_id": 0, "run_id": 1}
-    )
-    run_ids = [document["run_id"] async for document in stale]
-    if not run_ids:
-        return []
-
-    await database[RUNS].update_many(
-        {"run_id": {"$in": run_ids}},
-        {"$set": {"state": "failed", "error": INTERRUPTED, "updated_at": utcnow()}},
-    )
-    log.warning("marked %d interrupted run(s) failed: %s", len(run_ids), run_ids)
-    return run_ids
+    cursor = database[RUNS].find(
+        {"state": {"$nin": sorted(TERMINAL_RUN_STATES)}}, {"_id": 0}
+    ).sort("created_at", 1)
+    return [RunSummary(**document) async for document in cursor]
 
 
 # --------------------------------------------------------------------------

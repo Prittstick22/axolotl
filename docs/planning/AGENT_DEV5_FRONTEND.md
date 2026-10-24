@@ -1,17 +1,14 @@
 # Agent Brief — Dev 5: React Frontend, Demo & Videos
 
-> **Changed 24 Oct 2026:** the demo script, the videos and the presentation moved to
-> Dev 4; the parts of this brief about `docs/demo-script.md` and recording videos now
-> belong to Dev 4. The demo is chess (Python 2.7 → 3.14), with `legacy_orders` as the
-> backup. Chess is uploaded as a folder, so the folder upload screen is MVP
+> **Changed 24 Oct 2026:** the demo script, the videos and the presentation are separate
+> demo work, not MVP and unassigned for now. The demo is chess (Python 2.7 → 3.14), the
+> only demo; `legacy_orders` below is only a test fixture. Chess is uploaded as a folder, so the folder upload screen is MVP
 > ([#19](https://github.com/Prittstick22/axolotl/issues/19)). See [PROJECT_STATUS.md](../PROJECT_STATUS.md).
 
 You are the implementation agent for **Dev 5** on Axolotl (Encode London 2026). You have three documents:
 1. `Axolotl_Product_Requirements_and_Implementation_Handoff.md` — the Spec (§2 screens and UI principles, §9.3 frontend rules, §14 demo)
 2. `SHARED_CONTRACTS.md` — API (§6), models (§4), events (§7)
 3. This brief
-
-**Kickoff rule:** no project code before **Fri 23 Oct 2026 17:00 Europe/London**. Before then you may sketch screens on paper/Figma, read React Flow and Monaco docs, and plan the demo storyboard. No repo, no scaffold. Check the time first.
 
 ---
 

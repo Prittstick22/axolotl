@@ -86,10 +86,10 @@ nudge. Empty model turns cannot create an infinite loop.
   outages return a structured error rather than fabricated search results.
 - The visible-case interface does not provide the total held-out count. It is
   reported as unknown (`null`); the agent never loads hidden cases to compute it.
-- Chess (Python 2.7 → 3.14) is the MVP demo since 24 Oct, with `legacy_orders` as the
-  backup, but the chess fixture is not integrated yet ([#30](https://github.com/Prittstick22/axolotl/issues/30)). Prompts cover
-  Python 2 compatibility risks, but the existing orders fixture remains the available
-  executable demo. A Python 2 interpreter and repeatable terminal-session cases are
+- Chess (Python 2.7 → 3.14) is the only demo since 24 Oct, with no backup, but the chess
+  fixture is not integrated yet ([#30](https://github.com/Prittstick22/axolotl/issues/30)). Prompts cover
+  Python 2 compatibility risks, but the orders test fixture is the only project the
+  sandbox can run so far. A Python 2 interpreter and repeatable terminal-session cases are
   needed before any claim about chess migration can be made.
 - A full model-patch-to-Docker-verdict run must be performed where the runner is
   available. Unit tests use scripted collaborators and are not migration evidence.

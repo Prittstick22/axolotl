@@ -7,7 +7,7 @@ If this file and the Spec disagree, the Spec wins on *product/safety rules*. Thi
 
 ## 0. Rules every agent follows
 
-1. **Kickoff rule.** No submitted project code is written before **Fri 23 Oct 2026, 17:00 Europe/London**. Before that you may read docs, verify accounts/keys/cluster access, and plan. Do not create the repo, scaffold, fixture or code early. If the current time is before kickoff, stop after planning and say so.
+1. *(Removed on 24 Oct 2026. The number is kept so the §0.2–§0.8 references in the code stay correct.)*
 2. **No fakes.** No mocked AI output, hard-coded test results, invented graph edges, fake search, timer-driven progress or in-memory DB fallback in anything shown to judges. Temporary stubs are allowed *only* behind an interface while the real implementation is being built, must be named `*_stub`, must log a warning, and must be deleted before the Sat 17:00 dry run.
 3. **The verifier is the only source of pass/fail.** The model never decides success.
 4. **Baseline is immutable.** Nothing ever writes into the original snapshot or the test oracle.

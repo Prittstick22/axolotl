@@ -176,3 +176,198 @@ def test_visible_counterexamples_are_never_redacted():
         "args": [[{"unit_price": "1.25"}]],
     })
     assert "1.25" in str(visible)
+
+
+# --------------------------------------------------------------------------
+# #45: the unit endpoint returns its verifications
+# --------------------------------------------------------------------------
+
+def a_comparison(case_id: str, visibility: str, old: str, new: str) -> dict:
+    return {
+        "case_id": case_id,
+        "visibility": visibility,
+        "verdict": "mismatch",
+        "old": {"case_id": case_id, "status": "ok", "value": old,
+                "exception_message": None},
+        "new": {"case_id": case_id, "status": "ok", "value": new,
+                "exception_message": None},
+    }
+
+
+def a_verification(comparisons: list[dict]) -> dict:
+    return {
+        "verification_id": "ver_dd3750652173",
+        "run_id": "run_bb0da2e79534",
+        "unit_id": "unit_pricing",
+        "attempt": 1,
+        "workspace_revision": "rev_9db26cbee19c",
+        "gates": [],
+        "comparisons": comparisons,
+        "counterexample_ids": [],
+        "all_required_gates_passed": True,
+        "runner_mode": "trusted_docker",
+        "started_at": "2026-10-24T10:00:00Z",
+        "finished_at": "2026-10-24T10:00:09Z",
+    }
+
+
+def test_a_sealed_held_out_comparison_does_not_leak_what_the_case_expected():
+    """The Diff screen needs the per-case outputs; a sealed case must not give up its
+    expected value to get them.
+
+    This is the whole point of the held-out suite: if the values reach a read path,
+    the independence is gone whether or not a model was the reader.
+    """
+    from app.api.plans_runs import _redact_comparisons
+
+    sealed = _redact_comparisons(
+        a_verification([a_comparison("hcase_001", "held_out", "2.65", "2.64")]),
+        exposed=set(),
+    )
+    comparison = sealed["comparisons"][0]
+
+    assert "2.65" not in str(comparison)
+    assert "2.64" not in str(comparison)
+    assert comparison["redacted"] is True
+    # The reviewer still learns that a held-out case mismatched, and which one.
+    assert comparison["verdict"] == "mismatch"
+    assert comparison["case_id"] == "hcase_001"
+    assert comparison["old"]["status"] == "ok"
+
+
+def test_an_exposed_held_out_comparison_is_shown_in_full():
+    """Repair already showed this case to the model, so a reviewer may see it too."""
+    from app.api.plans_runs import _redact_comparisons
+
+    shown = _redact_comparisons(
+        a_verification([a_comparison("hcase_001", "held_out", "2.65", "2.64")]),
+        exposed={"hcase_001"},
+    )
+    assert "2.65" in str(shown["comparisons"][0])
+    assert "redacted" not in shown["comparisons"][0]
+
+
+def test_visible_comparisons_are_never_redacted():
+    from app.api.plans_runs import _redact_comparisons
+
+    shown = _redact_comparisons(
+        a_verification([a_comparison("case_001", "visible", "1.25", "1.26")]),
+        exposed=set(),
+    )
+    assert "1.25" in str(shown["comparisons"][0])
+
+
+def test_a_held_out_exception_message_is_redacted_but_its_presence_is_not():
+    """An exception message can carry the expected value in its text."""
+    from app.api.plans_runs import _redact_comparisons
+
+    comparison = a_comparison("hcase_002", "held_out", "x", "y")
+    comparison["new"]["status"] = "raised"
+    comparison["new"]["exception_message"] = "expected Decimal('2.65'), got 2.64"
+
+    sealed = _redact_comparisons(a_verification([comparison]), exposed=set())
+    new = sealed["comparisons"][0]["new"]
+
+    assert "2.65" not in str(new)
+    assert new["status"] == "raised"          # that it raised is not a secret
+    assert new["exception_message"] is not None
+
+
+def test_a_verification_with_no_comparisons_is_passed_through_unchanged():
+    from app.api.plans_runs import _redact_comparisons
+
+    verification = a_verification([])
+    assert _redact_comparisons(verification, exposed=set()) == verification
+    del verification["comparisons"]
+    assert _redact_comparisons(verification, exposed=set()) == verification
+
+
+def _a_run(run_id: str, state: str, unit_status: str):
+    from datetime import UTC, datetime
+
+    from app.models.contracts import RunSummary, UnitRunState
+
+    now = datetime.now(UTC)
+    return RunSummary(
+        run_id=run_id, plan_id="plan_000000000001",
+        repository_id="repo_000000000001", state=state, current_unit=None,
+        units=[UnitRunState(unit_id="unit_pricing", module_ids=["module_pricing"],
+                            status=unit_status)],
+        units_total=1, units_verified=1 if unit_status == "passed" else 0,
+        units_blocked=0, tests_passed=0, tests_failed=0, tests_inconclusive=0,
+        last_event_sequence=0, model="gemini-4-argon", runner_mode="trusted_docker",
+        created_at=now, updated_at=now,
+    )
+
+
+async def test_the_unit_endpoint_returns_the_run_s_verifications(monkeypatch):
+    """It returned a hardcoded `[]` with the comment "read when it lands". It had
+    landed: `list_verifications` was already in app/verification/store.py.
+
+    The Diff screen's gate table, attempt history and per-case outputs all come from
+    here, and only the per-case outputs exist nowhere else.
+    """
+    from app.api import plans_runs
+
+    run = _a_run("run_bb0da2e79534", "completed", "passed")
+
+    async def get_run(run_id):
+        return run
+
+    async def list_verifications(run_id, unit_id=None):
+        assert (run_id, unit_id) == ("run_bb0da2e79534", "unit_pricing")
+        return [a_verification([a_comparison("case_001", "visible", "1.25", "1.26")])]
+
+    async def no_counterexamples(run_id, unit_id, *, for_model):
+        return []
+
+    monkeypatch.setattr(plans_runs.store, "get_run", get_run)
+    monkeypatch.setattr(plans_runs.ports, "list_verifications", list_verifications)
+    monkeypatch.setattr(plans_runs.ports, "get_counterexamples", no_counterexamples)
+
+    body = await plans_runs.get_run_unit("run_bb0da2e79534", "unit_pricing")
+
+    assert len(body["verifications"]) == 1
+    assert body["verifications"][0]["verification_id"] == "ver_dd3750652173"
+    assert body["verifications"][0]["comparisons"][0]["old"]["value"] == "1.25"
+
+
+async def test_the_unit_endpoint_survives_dev4_being_unavailable(monkeypatch):
+    """An unwired verifier must not take the whole unit view down with it."""
+    from app.api import plans_runs
+    async def get_run(run_id):
+        return _a_run("run_1", "migrating", "migrating")
+
+    async def unavailable(*args, **kwargs):
+        raise plans_runs.ports.IntegrationUnavailable("Dev 4", "app.verification", "x")
+
+    monkeypatch.setattr(plans_runs.store, "get_run", get_run)
+    monkeypatch.setattr(plans_runs.ports, "list_verifications", unavailable)
+    monkeypatch.setattr(plans_runs.ports, "get_counterexamples", unavailable)
+
+    body = await plans_runs.get_run_unit("run_1", "unit_pricing")
+    assert body["verifications"] == []
+    assert body["counterexamples"] == []
+    assert body["unit"]["status"] == "migrating"
+
+def test_the_harness_logs_do_not_carry_what_the_comparisons_redact():
+    """The differential and impacted-tests gates store the harness's raw output, one
+    JSON outcome per case with held-out ones included. Redacting the comparisons alone
+    left `hcase_001`'s expected value in the same response, in the gate's log.
+    """
+    from app.api.plans_runs import WITHHELD_LOG, _withhold_harness_logs
+
+    verification = a_verification([])
+    verification["gates"] = [
+        {"gate": "differential", "status": "passed", "summary": "",
+         "log_excerpt": '{"case_id": "hcase_001", "status": "ok", "value": "2.65"}'},
+        {"gate": "impacted_tests", "status": "skipped", "summary": "", "log_excerpt": ""},
+        {"gate": "existing_tests", "status": "passed", "summary": "",
+         "log_excerpt": "12 passed in 0.14s"},
+    ]
+    gates = {g["gate"]: g for g in _withhold_harness_logs(verification)["gates"]}
+
+    assert "2.65" not in str(gates)
+    assert gates["differential"]["log_excerpt"] == WITHHELD_LOG
+    assert gates["impacted_tests"]["log_excerpt"] == ""        # nothing to withhold
+    assert gates["existing_tests"]["log_excerpt"] == "12 passed in 0.14s"

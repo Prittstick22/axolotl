@@ -168,6 +168,12 @@ async def get_counterexamples(run_id: str, unit_id: str, *, for_model: bool) -> 
     )
 
 
+async def list_verifications(run_id: str, unit_id: str | None = None) -> list:
+    return await _resolve("app.verification", "list_verifications", "Dev 4")(
+        run_id, unit_id
+    )
+
+
 async def expose_case(run_id: str, case_id: str) -> None:
     await _resolve("app.verification", "expose_case", "Dev 4")(run_id, case_id)
 

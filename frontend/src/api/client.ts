@@ -8,6 +8,7 @@
 import type { FolderFile } from '../lib/folder';
 import type {
   ApiErrorBody,
+  Artefact,
   DemoFixture,
   GraphPayload,
   MigrationPlan,
@@ -15,6 +16,7 @@ import type {
   ModuleDetail,
   RepositoryRecord,
   RunEvent,
+  RunReport,
   RunSummary,
   RuntimeInfo,
   SystemStatus,
@@ -171,4 +173,13 @@ export function cancelRun(runId: string): Promise<RunSummary> {
 /** GET /api/v1/runs/{run_id}/events - only events after `afterSequence`, oldest first. */
 export function listRunEvents(runId: string, afterSequence: number): Promise<RunEvent[]> {
   return apiFetch<RunEvent[]>(`${run(runId)}/events?after_sequence=${afterSequence}`);
+}
+
+/** GET /api/v1/runs/{run_id}/report - 404 REPORT_NOT_READY until the worker writes it. */
+export function getReport(runId: string): Promise<RunReport> {
+  return apiFetch<RunReport>(`${run(runId)}/report`);
+}
+
+export function listArtefacts(runId: string): Promise<Artefact[]> {
+  return apiFetch<Artefact[]>(`${run(runId)}/artefacts`);
 }

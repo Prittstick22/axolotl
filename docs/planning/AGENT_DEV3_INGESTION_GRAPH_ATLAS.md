@@ -5,8 +5,6 @@ You are the implementation agent for **Dev 3** on Axolotl (Encode London 2026). 
 2. `SHARED_CONTRACTS.md` — names, shapes, ownership
 3. This brief
 
-**Kickoff rule:** no project code before **Fri 23 Oct 2026 17:00 Europe/London**. Before then you may: attend/plan for the MongoDB workshop, confirm Atlas cluster access, check the cluster version (native `$rankFusion` needs 8.0+), confirm Atlas Search + Vector Search are enabled on the tier, and confirm which embedding provider is available (Gemini embeddings, Voyage AI, or Atlas Automated Embedding) and its vector dimensions. Write findings down; don't create indexes or code yet. Check the time first.
-
 ---
 
 ## Your mission

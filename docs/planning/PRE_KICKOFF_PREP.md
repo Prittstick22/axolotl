@@ -1,20 +1,6 @@
 # Axolotl — Pre-Kickoff Prep (Thu night / Fri before 17:00)
 
-**Goal:** be ready to have the app skeleton booting by **Fri 18:00**, without writing any project code before **Fri 23 Oct 17:00 Europe/London**.
-
-## The rule, in practice
-
-| ✅ Allowed before 17:00 | ❌ Not allowed before 17:00 |
-|---|---|
-| Installing tools, pulling Docker images | Creating project files, scaffolds or configs you'll commit |
-| Creating accounts, API keys, Atlas cluster | Writing code "to paste in later" (incl. in notes/gists) |
-| Reading docs, watching workshops | Running `npm create vite`, `uv init` etc. for the project |
-| Practising in a **throwaway** folder you delete and never copy from | Copying anything from practice folders into the repo |
-| Planning, checklists, these MD files | Pre-building the demo fixture or runner Dockerfile |
-
-If unsure, ask the organisers at kickoff, not after.
-
----
+**Goal:** be ready to have the app skeleton booting by **Fri 18:00**.
 
 ## Part 1 — Tonight: machine and tools (everyone)
 
@@ -49,8 +35,6 @@ Skim so you aren't learning during the build:
 
 ## Part 4 — Fri 17:00–18:00 runbook (Dev 2 executes, others help)
 
-Steps only. Write the actual files after 17:00.
-
 1. **17:00** Create the GitHub repo (or clear the existing empty one), clone it, and create the folder layout from SHARED_CONTRACTS §2.
 2. **Backend:** create `backend/pyproject.toml` with FastAPI, uvicorn, pymongo (>=4.9), pydantic, pydantic-settings, networkx, google-genai (>=2.3.0), pytest, httpx. Then install.
 3. `app/config.py`: settings from env vars listed in SHARED_CONTRACTS §10.
@@ -66,6 +50,5 @@ Add the planning MD files (`SHARED_CONTRACTS.md`, `TEAM_SPLIT.md`, briefs) into 
 
 ## Part 5 — Things to ask organisers at 17:00
 
-- Can planning docs written before kickoff go in the repo?
 - One entry across DeepMind + MongoDB + Agents That Ship?
 - Gemini 4 Argon access/quotas; event Atlas credits/cluster version.

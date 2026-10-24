@@ -1,7 +1,8 @@
-# legacy_orders — demo fixture
+# legacy_orders — test fixture
 
-> **Backup demo since 24 Oct 2026.** Chess (Python 2.7 → 3.14) is the MVP demo. This
-> fixture is the backup if chess fails, so keep it working and don't delete it. See
+> **Not a demo (24 Oct 2026).** Chess (Python 2.7 → 3.14) is the only demo, with no backup.
+> This fixture stays only because the backend tests and the sandbox run on it. It will be
+> deleted once chess runs end to end and the tests move to chess ([#54](https://github.com/Prittstick22/axolotl/issues/54)). See
 > [PROJECT_STATUS.md](../../docs/PROJECT_STATUS.md).
 
 **Provenance: written by the Axolotl team for this project.** It is not derived from

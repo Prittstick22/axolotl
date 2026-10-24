@@ -6,13 +6,12 @@
 ## Ground rules
 
 - **Scaffold only, no functionality.** Structure, configs, dependency manifests, empty modules, type definitions and a booting app are in. Business logic is out: parsing, graph building, DB queries, model calls, sandbox runs, verification, real UI screens.
-- **Do not commit until after Fri 23 Oct 17:00.** Build locally; first commit and push at kickoff.
 - Match `SHARED_CONTRACTS.md` names exactly, so the other four agents land code in the right places.
 - No secrets anywhere in files. `.env` is gitignored.
 
 ### In / out cheat-sheet
 
-| ✅ Scaffold (OK now) | ❌ Functionality (after 17:00, by owner) |
+| ✅ Scaffold | ❌ Functionality (by owner) |
 |---|---|
 | Folder layout + `__init__.py` files | AST parsing, import resolution |
 | `pyproject.toml`, `package.json`, lint/format/test config | MongoDB queries, indexes, search pipelines |
@@ -76,8 +75,8 @@ axolotl/
 │       ├── types/contracts.ts
 │       ├── pages/           # empty shells
 │       └── components/{DependencyGraph,ModuleInspector,MigrationTimeline,CodeDiff}/  # .gitkeep
-├── runner/.gitkeep          # Dev 4 fills after kickoff
-└── demo/.gitkeep            # Dev 4 fills after kickoff
+├── runner/.gitkeep          # Dev 4 fills
+└── demo/.gitkeep            # Dev 4 fills
 ```
 
 Each package `__init__.py` gets a one-line docstring naming its owner, e.g. `"""Ingestion — owner: Dev 3. See SHARED_CONTRACTS §2."""`
@@ -147,7 +146,7 @@ Each file defines `router = APIRouter(tags=[...])` with **no routes**, plus a do
 
 ---
 
-## 5. Final check before 17:00 (don't commit yet)
+## 5. Final check before the first commit
 
 - [ ] `uv sync && uv run pytest` green
 - [ ] `uvicorn` boots and `/api/v1/health` → ok
@@ -156,7 +155,7 @@ Each file defines `router = APIRouter(tags=[...])` with **no routes**, plus a do
 - [ ] No `.env`, keys or `node_modules` would be committed (`git status` after `git init`)
 - [ ] No business logic anywhere (search for DB calls, model calls, `ast.parse`, `docker`)
 
-## 6. At 17:00
+## 6. First commit
 
 1. `git init` (or clone the event repo), add the planning docs to `docs/planning/`, then make the first commit: `chore: project scaffold`.
 2. Push to `main`, share the link, and everyone clones and boots both apps.

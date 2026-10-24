@@ -722,3 +722,96 @@ async def test_last_event_sequence_never_goes_backwards(world):
     world.verdicts = {"unit_pricing": [False, True]}
     run = await run_to_completion(world)
     assert run.last_event_sequence >= len(world.events) - 1
+
+
+# --------------------------------------------------------------------------
+# #47: a failed Argon call must not read as a verification failure
+# --------------------------------------------------------------------------
+
+async def test_an_agent_error_is_journalled_and_named_as_the_block_reason(
+    world, monkeypatch
+):
+    """Two live runs on 24 Oct each lost a unit to this.
+
+    `run_unit_session` catches its own exceptions and *returns*
+    `ended_because="error"` instead of raising, so the worker's `except` clauses never
+    fired, the outcome was discarded, and the unit was blocked with the default "no
+    verification passed within the attempt budget". The Run screen showed a
+    verification failure for a unit whose model call had returned 429 - no verification
+    was ever attempted - and no `error` event existed to say otherwise.
+    """
+    async def model_call_failed(context, controller):
+        return UnitSessionOutcome(
+            ended_because="error",
+            final_message="429 Too Many Requests from POST /v1beta/interactions",
+        )
+
+    monkeypatch.setattr(ports_module, "run_unit_session", model_call_failed)
+
+    run = await run_to_completion(world)
+
+    errors = [e for e in world.events if e["event_type"] == "error"]
+    assert errors, "an agent error left no error event, so the UI cannot show one"
+    assert any("429" in (e["payload"].get("message") or "") for e in errors)
+    assert all(e["payload"].get("code") == "AGENT_SESSION_FAILED" for e in errors)
+
+    reasons = [e["payload"].get("reason") or ""
+               for e in world.events if e["event_type"] == "unit_blocked"]
+    assert reasons, "nothing was blocked, so this test proves nothing"
+
+    # The units whose own session failed name the real cause.
+    assert any("429" in r for r in reasons), f"the real cause is missing from {reasons}"
+    # Nothing is described as a failed verification, because none was attempted.
+    assert not any("no verification passed" in r for r in reasons), (
+        "a failed model call is still being reported as a failed verification"
+    )
+    # Dependants are blocked for their own, different and accurate, reason.
+    assert any("dependency" in r for r in reasons)
+    assert run.units_verified == 0
+
+
+async def test_a_model_that_gives_up_is_not_called_a_budget_failure(world, monkeypatch):
+    """Each ending explains itself; they used to share one sentence."""
+    async def gave_up(context, controller):
+        return UnitSessionOutcome(
+            ended_because="model_gave_up", final_message="I cannot migrate this safely."
+        )
+
+    monkeypatch.setattr(ports_module, "run_unit_session", gave_up)
+
+    await run_to_completion(world)
+
+    blocked = [e for e in world.events if e["event_type"] == "unit_blocked"]
+    assert blocked
+    reason = blocked[0]["payload"].get("reason") or ""
+    assert "stopped without a verified patch" in reason
+    assert "cannot migrate this safely" in reason
+    # Not an error: giving up is an ordinary ending, and an error event would show as
+    # a failure on the Run screen.
+    assert not [e for e in world.events if e["event_type"] == "error"]
+
+
+async def test_a_controller_reason_is_not_overwritten_by_the_generic_one(
+    world, monkeypatch
+):
+    """A rejected patch says why; the session's ending is vaguer than that."""
+    async def gave_up_after_setting_a_reason(context, controller):
+        controller.block_reason = "patch rejected: pricing.py is outside the unit"
+        return UnitSessionOutcome(ended_because="model_gave_up", final_message="done")
+
+    monkeypatch.setattr(ports_module, "run_unit_session",
+                        gave_up_after_setting_a_reason)
+
+    await run_to_completion(world)
+
+    blocked = [e for e in world.events if e["event_type"] == "unit_blocked"]
+    assert "outside the unit" in (blocked[0]["payload"].get("reason") or "")
+
+
+async def test_a_verified_session_records_no_error_and_no_block(world, monkeypatch):
+    """The ordinary path stays silent: the verifier alone decides success."""
+    run = await run_to_completion(world)
+
+    assert run.units_verified == 6
+    assert not [e for e in world.events if e["event_type"] == "error"]
+    assert not [e for e in world.events if e["event_type"] == "unit_blocked"]

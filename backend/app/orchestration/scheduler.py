@@ -74,6 +74,40 @@ def score_risk(
     return "low", factors
 
 
+def rescore_risk(units: list[MigrationUnit]) -> None:
+    """Score risk again once `visible_case_count` is known. In place.
+
+    `build_units` runs before Dev 4's cases can be counted - the counts are keyed by
+    `unit_id`, which only exists once the units do - so every unit is first scored with
+    `visible_case_count=0` and collects the `no_visible_cases` factor and its weight.
+    `pricing.py` showed risk "High" with that factor beside "Visible cases 8".
+
+    The two numeric inputs are read back out of the factors this module wrote, rather
+    than stored on `MigrationUnit`: the grammar is defined in `score_risk` directly
+    above, so both halves of the round trip live in one file and cannot drift apart.
+    Idempotent - rescoring an already-scored unit gives the same answer.
+    """
+    for unit in units:
+        unit.risk, unit.risk_factors = score_risk(
+            reverse_dependants=_factor_count(unit.risk_factors, "reverse_dependants"),
+            is_cycle=unit.is_cycle,
+            dynamic_edges=_factor_count(unit.risk_factors, "dynamic_edges"),
+            visible_case_count=unit.visible_case_count,
+        )
+
+
+def _factor_count(factors: list[str], name: str) -> int:
+    """`["reverse_dependants=3", "cycle"], "reverse_dependants"` -> 3. Absent -> 0."""
+    prefix = f"{name}="
+    for factor in factors:
+        if factor.startswith(prefix):
+            try:
+                return int(factor[len(prefix):])
+            except ValueError:   # a factor shape that is not a count
+                return 0
+    return 0
+
+
 def build_units(
     g: nx.DiGraph,
     files_by_module: dict[str, str],

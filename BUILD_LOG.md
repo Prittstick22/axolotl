@@ -1666,3 +1666,51 @@ Items 4 and 11 in [docs/backend-issues.md](docs/backend-issues.md) (#2 and #44),
 
 565 offline backend tests (3 new), 9 container tests, ruff clean. No frontend changes: the Run
 screen already shows a non-required skipped gate as "Differential skipped".
+
+---
+
+## Kickoff rule removed
+
+The event staff dropped the rule against writing code before Fri 23 Oct 17:00, and it was
+causing problems, so it is gone from every planning doc: the five dev briefs, `SHARED_CONTRACTS`
+§0, `TEAM_SPLIT`, `TEAM_TOOLING_PREP`, `APP_SCAFFOLD_SETUP`, `PRE_KICKOFF_PREP` and the Spec.
+`SHARED_CONTRACTS` §0.1 is kept as a "removed" line so the §0.2–§0.8 references in the code
+still point at the right rules. Mentions of kickoff as a time ("confirm quotas at kickoff") stay.
+
+Also in [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md): the demo script, videos and presentation
+(#14, #15, #31) now come last, #2 and #44 are fixed on main pending Dev 4's review, and backend
+issue 14 is #47.
+
+---
+
+## Item 12, fixed twice: the delta is the harness logs
+
+Dev 5 fixed backend item 12 (#45) on a branch while Dev 2 landed the same fix on main as
+`e4fad35` (PR #48). Both read `list_verifications` and redact sealed held-out comparisons by the
+counterexamples' rule, so as with `queryable` earlier, the branch was cut down to what `e4fad35`
+doesn't cover and merged on top of it as `23bffdc`.
+
+The gap: the differential and impacted-tests gates store the harness's raw output in
+`log_excerpt`, one JSON outcome per case with held-out ones included. `e4fad35`'s test fixtures
+have `"gates": []`, so the logs were never exercised. On Atlas Local, with `e4fad35` running,
+`unit_pricing` in `run_e5380c4d180c` returned all 10 held-out comparisons redacted, and
+`hcase_001`'s and `hcase_008`'s expected values in those two logs of the same response.
+
+The two logs are now withheld whole; the comparisons carry the same results, redacted case by
+case. Filtering line by line would trust a 4 KB truncation not to cut an outcome away from its case
+id. Live after the fix, no held-out outcome appears anywhere in the response. 599 offline backend
+tests (1 new, beside Dev 2's in `test_api_without_database.py`), ruff clean.
+
+Also: `docs/backend-issues.md` is gone (`60c3235`); GitHub issues are the source of truth for team
+issues from now on. Item 1, already fixed in `edd19ea`, became #51 and is closed.
+
+---
+
+## Chess is the only demo
+
+Decided 24 Oct: the team is building Axolotl for the chess demo only (Python 2.7 → 3.14), with no
+backup demo. Every doc that called `legacy_orders` the backup now says so. The `legacy_orders`
+fixture is **not deleted yet**: it is the only project the sandbox can run today, and 14 backend
+test files plus the CI sandbox job use it. It is now described as the test fixture, and
+[#54](https://github.com/Prittstick22/axolotl/issues/54) deletes it once chess runs end to end and
+the tests move to chess.

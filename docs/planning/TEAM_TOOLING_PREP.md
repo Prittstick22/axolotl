@@ -33,7 +33,6 @@ docker pull python:3.12-slim
 - Team chat channel for contract changes and gate check-ins
 - Secrets vault (Bitwarden/1Password shared item). **Never** paste keys in chat or commit `.env`
 - Branch naming: `devN/<topic>`; PR into `main`; `main` must always boot
-- **No commits until after Fri 17:00** — organisers check commit times. Work locally, commit after kickoff.
 
 ---
 

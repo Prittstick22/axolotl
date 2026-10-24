@@ -343,7 +343,19 @@ async def _migrate_units(
 
 
 async def _run_unit_session(run, plan, unit, controller) -> None:
-    """Hand control to Dev 1's agent. Its outcome is advisory; the verifier decides."""
+    """Hand control to Dev 1's agent. Its outcome is advisory; the verifier decides.
+
+    Advisory about *success* - the verifier alone decides that. But the outcome is the
+    only record of **why a session ended early**, so it is not optional.
+
+    Discarding it cost two live runs a unit each on 24 Oct (#47).
+    `run_unit_session` catches its own exceptions and *returns* `ended_because="error"`
+    rather than raising, so neither `except` below fires, `block_reason` stayed unset,
+    and `_block` fell back to "no verification passed within the attempt budget". The
+    Run screen then showed a verification failure for a unit whose model call had
+    actually returned 429, with no verification ever attempted and no `error` event to
+    say so. The real reason for the second run is simply lost.
+    """
     from app.agents.contexts import UnitSessionContext
     from app.api.targets import require_supported_target
 
@@ -359,7 +371,7 @@ async def _run_unit_session(run, plan, unit, controller) -> None:
         max_tool_calls=settings.max_tool_calls_per_unit,
     )
     try:
-        await ports.run_unit_session(context, controller)
+        outcome = await ports.run_unit_session(context, controller)
     except ports.IntegrationUnavailable as exc:
         controller.block_reason = str(exc)
         await events.append_event(
@@ -373,6 +385,46 @@ async def _run_unit_session(run, plan, unit, controller) -> None:
             run.run_id, "error", unit_id=unit.unit_id,
             payload={"code": "AGENT_SESSION_FAILED", "message": str(exc)[:500]},
         )
+    else:
+        await _record_session_outcome(run, unit.unit_id, outcome, controller)
+
+
+async def _record_session_outcome(run, unit_id: str, outcome, controller) -> None:
+    """Explain an early end, whatever ended it.
+
+    `ended_because` is one of `verified`, `budget_exhausted`, `model_gave_up`, `error`.
+    Only `error` gets an `error` event: Dev 5's Run screen renders that type already and
+    asked for exactly this. The others are ordinary endings, so they travel in the block
+    reason instead of inventing an event type no screen matches on yet.
+
+    A reason the controller has already set is more specific than anything here - a
+    rejected patch, say - so it is never overwritten.
+    """
+    ended = getattr(outcome, "ended_because", None)
+    message = (getattr(outcome, "final_message", "") or "").strip()
+
+    if ended == "error":
+        await events.append_event(
+            run.run_id, "error", unit_id=unit_id,
+            payload={"code": "AGENT_SESSION_FAILED",
+                     "message": message[:500] or "the agent session ended in an error"},
+        )
+
+    if ended in (None, "verified") or controller.block_reason:
+        return
+
+    controller.block_reason = _SESSION_END_REASONS.get(ended, ended) + (
+        f": {message}" if message else ""
+    )
+
+
+# What to tell the user for each non-verified ending. "no verification passed within
+# the attempt budget" was being said for all of them, including a 429.
+_SESSION_END_REASONS = {
+    "error": "the agent session ended in an error",
+    "budget_exhausted": "the agent ran out of its attempt budget before verifying",
+    "model_gave_up": "the agent stopped without a verified patch",
+}
 
 
 async def _final_verification(

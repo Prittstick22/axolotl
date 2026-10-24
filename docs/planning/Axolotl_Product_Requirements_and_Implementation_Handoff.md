@@ -7,14 +7,14 @@
 **Implementation language:** Python backend and migration engine; React/TypeScript web application  
 **Implementation window:** Friday 23 October 2026, **17:00 Europe/London**, to Sunday 25 October 2026, **12:00 Europe/London**
 
-> **Instructions to the implementing agent:** This is the source-of-truth product and engineering specification for **Axolotl only**. Build the smallest complete, genuinely working system first; do not substitute mock AI execution, hard-coded test results, fabricated architecture edges, or fake database searches for live functionality. Preserve the safety and verification rules below. Confirm the actual model and database features granted at the event before relying on them. The event forbids submitted project code written before the Friday 17:00 kickoff; this document is planning material, not an instruction to implement early.
+> **Instructions to the implementing agent:** This is the source-of-truth product and engineering specification for **Axolotl only**. Build the smallest complete, genuinely working system first; do not substitute mock AI execution, hard-coded test results, fabricated architecture edges, or fake database searches for live functionality. Preserve the safety and verification rules below. Confirm the actual model and database features granted at the event before relying on them.
 
 ---
 
 ## 0. Read this first — decisions, priorities and non-negotiables
 
 > **Overridden 24 Oct 2026:** the team chose Python 2.7 → 3.14 (Will's chess game) as
-> the MVP demo, with `legacy_orders` and Modern Python 3 as the backup. Where this Spec
+> the only demo, with no backup; `legacy_orders` remains only as a test fixture. Where this Spec
 > lists Python 2 → 3 as a non-goal or names Modern Python 3 as the one MVP target, the
 > decision wins. The sandbox and safety rules still apply unchanged. See
 > [PROJECT_STATUS.md](../PROJECT_STATUS.md).
@@ -184,7 +184,7 @@ On a **real, runnable, trusted legacy-style Python 3 sample application containi
 
 Where the user explicitly asks to 'choose what to upgrade it to', the actual MVP includes **one working selection plus transparently disabled future targets**. Never present an unimplemented target as functional.
 
-### 3.3 Example source fixture (built **after official kickoff**)
+### 3.3 Example source fixture
 
 ```text
 legacy_orders/
@@ -742,7 +742,7 @@ axolotl/
 │   ├── Dockerfile
 │   └── policy.md
 └── demo/
-    ├── legacy_orders/       # code must be authored only after kickoff
+    ├── legacy_orders/
     ├── challenge_cases/     # protected verifier inputs
     └── expected_demo_flow.md
 ```
@@ -858,7 +858,7 @@ Each developer opens short-lived branches. Set shared API contracts at kickoff. 
 
 | Local time | Developer A (AI/orchestration) | Developer B (graph/MongoDB/tests) | Developer C (frontend) | Gate |
 |---|---|---|---|---|
-| **Fri 14:30–17:00** | Attend DeepMind workshop; verify SDK/model access | Attend MongoDB workshop; verify cluster and indexes | Prep design/contracts without project implementation | **No submitted code before 17:00** |
+| **Fri 14:30–17:00** | Attend DeepMind workshop; verify SDK/model access | Attend MongoDB workshop; verify cluster and indexes | Prep design/contracts | — |
 | **Fri 17:00–18:30** | Gemini connection spike, tool schemas | AST/parser + fixture scaffold + Atlas connection | Vite/React/React Flow scaffold, API types | Contracts signed off |
 | **Fri 18:30–21:00** | First real Argon planning/patch tool call | Repo parsing, persisted nodes/edges, baseline test runner | Functional graph with click-to-inspect | Vertical slice: repo → graph → test |
 | **Fri 21:00–23:30** | Orchestrator state machine, first patch attempt | Differential verifier, Atlas Search setup | Target selection, run dashboard and polling | One real unit tested |
@@ -897,7 +897,7 @@ Use deliberate breaks/sleep; a successful demo is worth more than two additional
 | **2:05–2:35** | Argon investigates mismatch, patches, reruns sandbox test | Self-repair and gated progression |
 | **2:35–3:00** | Show verified graph state, diff, Atlas-backed counterexample/history, final report | Outcome and limitations |
 
-**Performance strategy:** Preload a small trusted fixture and warm the indexes before the judges arrive, **only after kickoff**. For live demo, run a newly initiated bounded migration against real inputs. Keep a clearly labelled recording of a previous real run for contingencies, never present a recording as a live execution.
+**Performance strategy:** Preload a small trusted fixture and warm the indexes before the judges arrive. For live demo, run a newly initiated bounded migration against real inputs. Keep a clearly labelled recording of a previous real run for contingencies, never present a recording as a live execution.
 
 ### Recommended 'wow' moment
 
@@ -950,7 +950,7 @@ Use **minimal permissions**. Do not connect the live GitHub organisation or real
 
 ## 16. Implementation agent: exact starting order
 
-**Do not start writing submitted application code until the official kickoff.** After kickoff, implement in this order:
+Implement in this order:
 
 1. Create repo skeleton and `.env.example`, initialise two smoke tests and README.
 2. Build the trusted legacy example repository and deterministic test oracle.
@@ -991,7 +991,7 @@ Everything else is an enhancement.
 ### Hackathon source of truth
 
 - **Encode London 2026 official programme:** https://www.encodeclub.com/programmes/encode-london-2026  
-  Source for event dates, sponsor challenge wording, DeepMind Pathway 1, judging weights, model/toolkit guidance, MongoDB qualifying features, submission requirements and code-after-kickoff rule.
+  Source for event dates, sponsor challenge wording, DeepMind Pathway 1, judging weights, model/toolkit guidance, MongoDB qualifying features, and submission requirements.
 
 ### Official technical documentation consulted
 
@@ -1005,7 +1005,7 @@ Everything else is an enhancement.
 ### Nature of this document
 
 - **From the user's requested product direction:** Python repo import; user-selected upgrade target; spiderweb view of modules/methods/dependencies; module-by-module modernisation; sandbox tests; automatic progression; original Axolotl behavioural preservation and verification concept.
-- **From official event brief:** DeepMind and MongoDB eligibility, mandatory demo format and prize criteria, advertised Gemini model naming, Gemini SDK guidance and kickoff rule.
+- **From official event brief:** DeepMind and MongoDB eligibility, mandatory demo format and prize criteria, advertised Gemini model naming and Gemini SDK guidance.
 - **Proposed architecture/design choices (not official requirements):** React Flow, FastAPI, NetworkX, AST, MongoDB collection schema, exact API routes, per-module scheduler, test fixture, UI states, developer roles, acceptance metrics and timetable.
 - **Assumptions requiring validation:** sandbox capabilities, Atlas tier/indexes, exact future model SDK parameter support, cross-bounty submission rules and target user's real validation.
 

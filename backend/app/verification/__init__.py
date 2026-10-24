@@ -54,11 +54,16 @@ __all__ = [
     "count_visible_cases",
     "expose_case",
     "get_counterexamples",
+    "list_verifications",
     "load_cases",
     "persist_cases",
     "verify_final",
     "verify_unit",
 ]
+
+# Already implemented in `store`; re-exported so `ports` can resolve it on the package
+# like every other Dev 4 call, rather than reaching into a submodule (#45).
+list_verifications = store.list_verifications
 
 RUNNER_UNAVAILABLE = (
     "the sandbox runner is unavailable, so nothing could be executed; "

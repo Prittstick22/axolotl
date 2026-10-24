@@ -2,11 +2,12 @@
 
 Everything you need to pick up Axolotl. Fifteen minutes end to end.
 
-> **Decision, 24 Oct 2026:** the MVP demo is Will's chess game, migrated from Python 2.7 to Python 3.14.
-> `legacy_orders` stays as the backup demo and must keep working. Chess can't be migrated yet:
+> **Decision, 24 Oct 2026:** the demo is Will's chess game, migrated from Python 2.7 to Python 3.14.
+> **Chess is the only demo; there is no backup.** `legacy_orders` stays in the repo only as the test
+> fixture until chess replaces it ([#54](https://github.com/Prittstick22/axolotl/issues/54)). Chess can't be migrated yet:
 > see [#30](https://github.com/Prittstick22/axolotl/issues/30) and [PROJECT_STATUS.md](PROJECT_STATUS.md).
 
-> Dev 4 (the verifier) now owns the demo script, the videos and the presentation.
+> The demo script, videos and presentation are demo work: not MVP, unassigned, done last.
 > What is left, by developer, is in [PROJECT_STATUS.md](PROJECT_STATUS.md).
 
 ---
@@ -185,9 +186,8 @@ assert that you did. Those are held-out.
 ### Dev 4 — Verifier & sandbox · `app/sandbox/`, `app/verification/`, `runner/`, `demo/`
 
 **Changed 24 Oct:** chess is the MVP demo, so the dual-runtime sandbox and chess cases
-are MVP ([#22](https://github.com/Prittstick22/axolotl/issues/22), [#23](https://github.com/Prittstick22/axolotl/issues/23)). You also own the demo script, the three videos and
-the presentation ([#14](https://github.com/Prittstick22/axolotl/issues/14), [#15](https://github.com/Prittstick22/axolotl/issues/15), [#31](https://github.com/Prittstick22/axolotl/issues/31)). `legacy_orders` below is now
-the backup demo: keep it working.
+are MVP ([#22](https://github.com/Prittstick22/axolotl/issues/22), [#23](https://github.com/Prittstick22/axolotl/issues/23)). `legacy_orders` below is no longer a demo: it is
+only the test fixture, until chess replaces it ([#54](https://github.com/Prittstick22/axolotl/issues/54)).
 
 **Already there, built and proven:** the complete demo fixture, 16 visible + 10 held-out
 cases, the `axolotl-runner` image, and `harness/run_cases.py`. All of it verified in a
@@ -265,5 +265,5 @@ and §2 now says so.
 3. **React 19 vs §2's React 18.** Resolved: Dev 5 kept React 19 (Fri 23 Oct).
 4. **Fixture parameters.** Tax rate, discount bands and the refund rule were unspecified
    and chosen by Dev 2. Dev 4 to confirm — all marked `[confirm]`.
-5. **The demo.** Decided 24 Oct: chess, Python 2.7 → 3.14, is the MVP demo, and
-   `legacy_orders` is the backup. Tracked in [#30](https://github.com/Prittstick22/axolotl/issues/30).
+5. **The demo.** Decided 24 Oct: chess, Python 2.7 → 3.14, is the only demo. There is no
+   backup; `legacy_orders` is only the test fixture ([#54](https://github.com/Prittstick22/axolotl/issues/54)). Tracked in [#30](https://github.com/Prittstick22/axolotl/issues/30).

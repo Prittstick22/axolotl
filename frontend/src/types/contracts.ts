@@ -433,6 +433,15 @@ export interface RunReport {
   performance: PerformanceSummary | null;
 }
 
+// ---------- GET /runs/{run_id}/artefacts ----------
+export interface Artefact {
+  artefact_id: string;
+  kind: 'patch' | 'archive' | 'report';
+  sha256: string;
+  /** Rooted at the API's origin: /api/v1/artefacts/{id}/download */
+  download_url: string;
+}
+
 // ---------- GET /system/status (SHARED_CONTRACTS §6) ----------
 export type DependencyStatus = 'ok' | 'unavailable' | 'building';
 

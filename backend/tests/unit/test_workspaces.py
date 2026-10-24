@@ -201,7 +201,7 @@ async def test_the_diff_shows_only_what_changed(world):
 
 
 async def test_the_diff_from_rev_baseline_reads_the_snapshot(world, monkeypatch):
-    """Backend issue 11: with no baseline every file read as new."""
+    """#44: with no baseline every file read as new."""
     import app.verification as verification_module
 
     async def repository_for_run(run_id):

@@ -5,8 +5,6 @@ You are the implementation agent for **Dev 2** on Axolotl (Encode London 2026). 
 2. `SHARED_CONTRACTS.md` — names, shapes, ownership (you are its custodian)
 3. This brief
 
-**Kickoff rule:** no project code before **Fri 23 Oct 2026 17:00 Europe/London**. Before then: confirm everyone has repo access, agree branch rules, check the machine for the demo has Docker + Python 3.12 + Node. Check the time first.
-
 ---
 
 ## Your mission

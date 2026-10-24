@@ -5,8 +5,6 @@ You are the implementation agent for **Dev 1** on Axolotl (Encode London 2026). 
 2. `SHARED_CONTRACTS.md` — names, shapes, ownership, API, events (read fully before coding)
 3. This brief — your scope
 
-**Kickoff rule:** do not write project code before **Fri 23 Oct 2026 17:00 Europe/London**. Before then you may only: confirm `GEMINI_API_KEY` works, read the Interactions API / function-calling / background-execution docs, and draft prompts in your head or notes outside the repo. Check the time first.
-
 ---
 
 ## Your mission

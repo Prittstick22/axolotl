@@ -22,6 +22,7 @@ import { isLive, useRun } from '@/lib/run';
 import NewMigration from '@/screens/NewMigration';
 import Overview from '@/screens/Overview';
 import PlanScreen from '@/screens/PlanScreen';
+import ReportScreen from '@/screens/ReportScreen';
 
 const STATUS_POLL_MS = 5000;
 // import.meta.env.DEV is false in `npm run build`, so the preview is dropped from production.
@@ -135,7 +136,7 @@ export default function App() {
           <Route path="graph" element={<Suspense><GraphScreen /></Suspense>} />
           <Route path="plan" element={<PlanScreen />} />
           <Route path="run" element={<Suspense><RunScreen /></Suspense>} />
-          <Route path="report" element={<Pending screen="Final report" />} />
+          <Route path="report" element={<ReportScreen />} />
           <Route path="search" element={<Pending screen="Search" />} />
         </Route>
         {UiPreview && <Route path="dev/ui" element={<Suspense><UiPreview /></Suspense>} />}

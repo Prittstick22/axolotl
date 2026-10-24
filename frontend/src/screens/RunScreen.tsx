@@ -17,7 +17,7 @@ import { ApiError, cancelRun, getGraph, getPlan, listRunEvents } from '@/api/cli
 import { ConnectionBanner } from '@/components/ConnectionBanner';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { eventRows, type EventRow, type GateChip } from '@/lib/events';
-import { attemptOf, isLive, POLL_MS, useRun } from '@/lib/run';
+import { attemptOf, CLOSING_WAIT_MS, isLive, POLL_MS, useRun } from '@/lib/run';
 import { GATE_STATUS, RUN_STATE, TONE_BORDER, TONE_TEXT, TONE_TINT } from '@/lib/status';
 import { GraphArea } from '@/screens/GraphScreen';
 import { Field } from '@/screens/Overview';
@@ -25,8 +25,6 @@ import type { RunEvent, RunSummary } from '@/types/contracts';
 
 // worker.py turns the run terminal first, then records report_generated or an error event.
 const CLOSING = new Set(['report_generated', 'error']);
-// ponytail: a run that ends with no closing event (a backend restart) stops being polled after this.
-const CLOSING_WAIT_MS = 120_000;
 const time = (iso: string) => new Date(iso).toLocaleTimeString('en-GB');
 const ROW_ICON = { event: CircleIcon, ok: CheckCircleIcon, wait: HourglassIcon, repair: ArrowClockwiseIcon, fail: XCircleIcon };
 

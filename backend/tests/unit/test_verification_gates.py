@@ -70,7 +70,7 @@ def world(monkeypatch):
 
 
 async def test_a_unit_with_no_cases_passes_on_its_other_gates(world):
-    """Backend issue 4: storage.py passed every gate and was still blocked."""
+    """#2: storage.py passed every gate and was still blocked."""
     result = await verification.verify_unit("run_1", UNIT, WORKSPACE, [], 1)
 
     differential = next(g for g in result.gates if g.gate == "differential")

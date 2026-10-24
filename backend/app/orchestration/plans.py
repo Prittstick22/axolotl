@@ -21,7 +21,12 @@ from app.errors import (
 from app.models.contracts import MigrationPlan, MigrationUnit, PlanProposal
 from app.orchestration import ports, store
 from app.orchestration.ids import new_plan_id
-from app.orchestration.scheduler import build_units, is_valid_order, topological_order
+from app.orchestration.scheduler import (
+    build_units,
+    is_valid_order,
+    rescore_risk,
+    topological_order,
+)
 
 log = logging.getLogger(__name__)
 
@@ -64,6 +69,11 @@ async def create_plan(repo_id: str, target_id: str) -> MigrationPlan:
 
     units = build_units(graph, ports.files_by_module(graph))
     cases_known = await _apply_visible_case_counts(repo_id, units)
+    if cases_known:
+        # Risk was scored before the counts existed, so every unit carried
+        # `no_visible_cases` and its weight (#3). When the cases are genuinely
+        # unavailable the factor is honest, so only rescore when they are not.
+        rescore_risk(units)
     deterministic = topological_order(units)
 
     proposal, rationale_prefix = await _ask_argon(repo_id, units, target)

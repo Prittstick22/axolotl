@@ -180,11 +180,12 @@ icons and IBM Plex, following the template in [`design/`](design/).
 
 ## 5. Demo inputs
 
-> **Decision, 24 Oct 2026:** the MVP demo is Will's chess game, migrated from Python 2.7 to Python 3.14.
-> `legacy_orders` stays as the backup demo and must keep working. Chess can't be migrated yet:
+> **Decision, 24 Oct 2026:** the demo is Will's chess game, migrated from Python 2.7 to Python 3.14.
+> **Chess is the only demo; there is no backup.** `legacy_orders` stays in the repo only as the test
+> fixture until chess replaces it ([#54](https://github.com/Prittstick22/axolotl/issues/54)). Chess can't be migrated yet:
 > see [#30](https://github.com/Prittstick22/axolotl/issues/30) and [PROJECT_STATUS.md](PROJECT_STATUS.md).
 
-- `demo/legacy_orders/`: the implemented fixture, with visible and held-out behaviour
+- `demo/legacy_orders/`: the test fixture (not a demo), with visible and held-out behaviour
   cases and a seeded rounding rule. A banker's-rounding patch keeps all 12 of its own
   tests green but is caught by the held-out differential (2.65 → 2.64).
 - `demo/chess/`: a terminal chess game supplied unchanged, with a SHA-256 provenance
@@ -223,10 +224,8 @@ icons and IBM Plex, following the template in [`design/`](design/).
 
 ## 8. Known gaps
 
-- A unit with no visible behaviour cases can never pass verification, so `legacy_orders`
-  stops at 2 of 6 units (item 4 in [`backend-issues.md`](backend-issues.md)).
-- The Diff, Report and Search screens are not built. The Diff screen also waits on
-  items 11 and 12 in [`backend-issues.md`](backend-issues.md).
+- The Diff and Search screens are not built ([#5](https://github.com/Prittstick22/axolotl/issues/5),
+  [#20](https://github.com/Prittstick22/axolotl/issues/20)).
 - The chess demo needs dual-runtime sandbox selection, behaviour cases and target
   registration. Chess is the MVP demo since 24 Oct; tracked in [#30](https://github.com/Prittstick22/axolotl/issues/30).
 - `calls` edges are not extracted.

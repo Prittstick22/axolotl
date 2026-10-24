@@ -215,7 +215,8 @@ Written only through `events.append_event`. Payloads are redacted and capped at 
 | `counterexample_recorded` | `{counterexample_id, case_id, visibility, ...}` |
 | `repair_started` | `{attempt, budget_remaining}` |
 | `snapshot_accepted` | `{revision}` |
-| `unit_blocked` | `{reason, verification_id}` |
+| `unit_blocked` | `{reason, verification_id}` — tried, could not be verified |
+| `unit_skipped` | `{reason, verification_id}` — will not be attempted: blocked prerequisite, cancellation, or restart (#27) |
 | `report_generated` | `{artefact_ids}` |
 | `error` | `{code, message}` |
 

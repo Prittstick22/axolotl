@@ -268,19 +268,25 @@ def _withhold_gate(gate: dict[str, Any], sealed: set[str]) -> dict[str, Any]:
 
 @router.get("/runs/{run_id}/diff")
 async def get_run_diff(run_id: str, unit_id: str | None = None) -> dict[str, Any]:
-    """T-16: the diff shown must be the diff of the verified accepted revision."""
+    """T-16: the diff shown must be the diff of the verified accepted revision.
+
+    **Of the revision that unit's verdict is on** (#55). Asked about a unit, this used
+    to diff the run's *last* accepted revision and merely filter it to the unit's
+    files. On `run_e5380c4d180c` that served `rev_7295a37a6e68` for all four accepted
+    units, though only `unit_orders` was verified on it. The file content happened to
+    agree, because a later unit cannot touch another unit's files, but the Diff screen
+    shows this `revision` in its header beside the gates of the verification on the
+    unit's own revision - so for every unit except the last, the two disagreed.
+
+    A unit that accepted nothing - blocked, skipped, still running - gets
+    `revision: null, files: []`. Serving the last revision filtered to its files
+    returned an empty list too, which reads as "accepted, nothing changed" rather than
+    "nothing was accepted".
+    """
     run = await store.get_run(run_id)
 
-    # The whole journal: with a 1000-event ceiling a long run would hand us an
-    # intermediate revision and we would serve it as the verified one (T-16).
-    accepted = [
-        e for e in await events.list_all_events(run_id)
-        if e.event_type == "snapshot_accepted"
-    ]
-    if not accepted:
-        return {"base_revision": "rev_baseline", "revision": None, "files": []}
-
-    revision = accepted[-1].payload.get("revision")
+    # Resolved before the early return below: a question about a unit that is not in
+    # the plan is a 404 whether or not the run accepted anything.
     paths = None
     if unit_id:
         plan = await store.get_plan(run.plan_id)
@@ -295,6 +301,23 @@ async def get_run_diff(run_id: str, unit_id: str | None = None) -> dict[str, Any
                 details={"run_id": run_id, "unit_id": unit_id},
             )
         paths = unit.file_paths
+
+    # The whole journal: with a 1000-event ceiling a long run would hand us an
+    # intermediate revision and we would serve it as the verified one (T-16).
+    accepted = [
+        e for e in await events.list_all_events(run_id)
+        if e.event_type == "snapshot_accepted"
+    ]
+    if unit_id:
+        # This unit's own acceptances, in order. The journal is append-only and is
+        # what T-16 is argued from, so it stays the source here rather than
+        # `UnitRunState.accepted_revision` - one source, not two that can disagree.
+        accepted = [e for e in accepted if e.unit_id == unit_id]
+
+    if not accepted:
+        return {"base_revision": "rev_baseline", "revision": None, "files": []}
+
+    revision = accepted[-1].payload.get("revision")
 
     try:
         files = await ports.diff(run_id, "rev_baseline", revision, paths)

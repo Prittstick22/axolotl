@@ -13,6 +13,7 @@ They need no external service and are safe to run anywhere.
 import pytest
 from fastapi.testclient import TestClient
 
+from app.errors import AppError
 from app.persistence import db
 from tests.conftest import API
 
@@ -642,3 +643,149 @@ def _a_repository(repo_id: str):
         file_count=16, module_count=13, symbol_count=120, test_file_count=1,
         analysis_status="ok", created_at=datetime.now(UTC),
     )
+
+
+# --------------------------------------------------------------------------
+# #55: a unit's diff is of the revision its verdict is on
+# --------------------------------------------------------------------------
+
+def an_event(sequence: int, unit_id: str | None, revision: str):
+    from datetime import UTC, datetime
+
+    from app.models.contracts import RunEvent
+
+    return RunEvent(
+        run_id="run_e5380c4d180c", sequence=sequence,
+        timestamp=datetime.now(UTC), event_type="snapshot_accepted",
+        unit_id=unit_id, payload={"revision": revision},
+    )
+
+
+def a_plan_with_units(*unit_ids: str):
+    from datetime import UTC, datetime
+
+    from app.models.contracts import MigrationPlan, MigrationUnit
+
+    return MigrationPlan(
+        plan_id="plan_000000000001", repository_id="repo_000000000001",
+        snapshot_hash="sha256:abc", target_id="modern_python3",
+        units=[
+            MigrationUnit(
+                unit_id=u, module_ids=[u.replace("unit_", "module_")],
+                file_paths=[u.replace("unit_", "") + ".py"],
+                depends_on_unit_ids=[], dependant_unit_ids=[],
+            )
+            for u in unit_ids
+        ],
+        order=list(unit_ids), rationale="", risks=[], coverage_gaps=[],
+        status="approved", model="gemini-4-argon", created_at=datetime.now(UTC),
+    )
+
+
+@pytest.fixture
+def diff_world(monkeypatch):
+    """A run that accepted two units on two different revisions."""
+    from app.api import plans_runs
+
+    state: dict = {
+        "events": [
+            an_event(10, "unit_customers", "rev_76b17cde768c"),
+            an_event(20, "unit_pricing", "rev_18c737308c94"),
+        ],
+        "asked": [],
+    }
+
+    async def get_run(run_id):
+        return _a_run(run_id, "completed", "passed")
+
+    async def get_plan(plan_id):
+        return a_plan_with_units("unit_customers", "unit_pricing", "unit_refunds")
+
+    async def list_all_events(run_id):
+        return state["events"]
+
+    async def diff(run_id, base, revision, paths=None):
+        state["asked"].append({"base": base, "revision": revision, "paths": paths})
+        return [{"path": (paths[0] if paths else "pricing.py"), "status": "modified"}]
+
+    monkeypatch.setattr(plans_runs.store, "get_run", get_run)
+    monkeypatch.setattr(plans_runs.store, "get_plan", get_plan)
+    monkeypatch.setattr(plans_runs.events, "list_all_events", list_all_events)
+    monkeypatch.setattr(plans_runs.ports, "diff", diff)
+    return state
+
+
+async def test_a_unit_is_diffed_against_its_own_accepted_revision(diff_world):
+    """The case from the issue: two accepted units, asking for the first.
+
+    It used to serve the run's last accepted revision for both, so the Diff screen's
+    header showed a revision the unit's gates were not verified on.
+    """
+    from app.api import plans_runs
+
+    body = await plans_runs.get_run_diff("run_e5380c4d180c", unit_id="unit_customers")
+
+    assert body["revision"] == "rev_76b17cde768c"
+    assert diff_world["asked"][-1]["revision"] == "rev_76b17cde768c"
+    assert diff_world["asked"][-1]["paths"] == ["customers.py"]
+
+
+async def test_the_last_accepted_unit_is_unaffected(diff_world):
+    from app.api import plans_runs
+
+    body = await plans_runs.get_run_diff("run_e5380c4d180c", unit_id="unit_pricing")
+    assert body["revision"] == "rev_18c737308c94"
+
+
+async def test_without_a_unit_the_run_s_last_accepted_revision_is_used(diff_world):
+    """Unchanged behaviour: the whole-run diff is of where the run ended up."""
+    from app.api import plans_runs
+
+    body = await plans_runs.get_run_diff("run_e5380c4d180c")
+
+    assert body["revision"] == "rev_18c737308c94"
+    assert diff_world["asked"][-1]["paths"] is None
+
+
+async def test_a_unit_that_accepted_nothing_says_so(diff_world):
+    """`unit_refunds` was blocked. Serving the last revision filtered to its files
+    returned an empty list too, which reads as "accepted, nothing changed"."""
+    from app.api import plans_runs
+
+    body = await plans_runs.get_run_diff("run_e5380c4d180c", unit_id="unit_refunds")
+
+    assert body["revision"] is None
+    assert body["files"] == []
+    assert diff_world["asked"] == [], "a diff was computed for an unaccepted unit"
+
+
+async def test_a_later_acceptance_of_the_same_unit_wins(diff_world):
+    """A repaired unit is accepted more than once; its verdict is on the last one."""
+    from app.api import plans_runs
+
+    diff_world["events"].append(an_event(30, "unit_customers", "rev_later0000"))
+    body = await plans_runs.get_run_diff("run_e5380c4d180c", unit_id="unit_customers")
+
+    assert body["revision"] == "rev_later0000"
+
+
+async def test_an_unknown_unit_is_a_404_even_with_nothing_accepted(diff_world):
+    """The unit check used to sit after the early return, so this answered 200."""
+    from app.api import plans_runs
+
+    diff_world["events"] = []
+
+    with pytest.raises(AppError) as caught:
+        await plans_runs.get_run_diff("run_e5380c4d180c", unit_id="unit_nope")
+
+    assert caught.value.status_code == 404
+    assert caught.value.code == "UNIT_NOT_FOUND"
+
+
+async def test_a_run_that_accepted_nothing_has_no_diff(diff_world):
+    from app.api import plans_runs
+
+    diff_world["events"] = []
+    body = await plans_runs.get_run_diff("run_e5380c4d180c")
+
+    assert body == {"base_revision": "rev_baseline", "revision": None, "files": []}

@@ -47,7 +47,8 @@ except NameError:
 
 DEFAULT_CASE_TIMEOUT_SECONDS = 5
 
-# Diagnostics go to stderr so stdout stays one-JSON-line-per-case.
+# Diagnostics go to stderr so stdout stays one-JSON-line-per-case. So does anything
+# the candidate prints: see _private_stdout.
 def _warn(message):
     print(message, file=sys.stderr)
 
@@ -299,7 +300,26 @@ def load_cases(path):
     raise ValueError("cases file must be a JSON array or an object with a 'cases' key")
 
 
+def _private_stdout():
+    """A copy of stdout that only outcome lines are written to (#98).
+
+    The candidate runs in this process. Its prints, and anything written to fd 1 at
+    the C level, go to stderr from here on, so they can never read as an outcome.
+    """
+    sys.stdout.flush()
+    outcomes = os.fdopen(os.dup(1), "w")
+    os.dup2(2, 1)
+    sys.stdout = sys.stderr
+    return outcomes
+
+
+def _emit(stream, outcome):
+    stream.write(json.dumps(outcome, sort_keys=True) + "\n")
+    stream.flush()   # a container killed mid-run keeps every finished case
+
+
 def main(argv=None):
+    out = _private_stdout()
     parser = argparse.ArgumentParser(description="Run Axolotl behaviour cases.")
     parser.add_argument("--code", required=True, help="candidate code tree (mounted read-only)")
     parser.add_argument("--cases", required=True, help="cases JSON file (mounted read-only)")
@@ -317,13 +337,13 @@ def main(argv=None):
     try:
         cases = load_cases(args.cases)
     except Exception as exc:  # noqa: BLE001
-        print(json.dumps({
+        _emit(out, {
             "case_id": None,
             "status": "harness_error",
             "value": None,
             "exception_type": _class_name(exc),
             "exception_message": _text(exc),
-        }, sort_keys=True))
+        })
         return 1
 
     failures = 0
@@ -341,7 +361,7 @@ def main(argv=None):
             }
         if outcome["status"] == "harness_error":
             failures += 1
-        print(json.dumps(outcome, sort_keys=True))
+        _emit(out, outcome)
 
     # Exit code reports harness health only. Case outcomes are read from stdout:
     # a "raised" or "timeout" case is a normal result, not a harness failure.

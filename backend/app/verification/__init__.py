@@ -201,12 +201,13 @@ async def _snapshot_hash(repo_id: str) -> str:
 def _outcomes_by_case(
     raw: list[dict], cases: list[BehaviourCase]
 ) -> dict[str, CaseOutcome]:
+    # A line with no case_id belongs to no case. It used to take the id of the case
+    # at its line position, so one stray line could give a case another's outcome
+    # (#98). A case with no line is reported as missing, which is what it is.
     known = {c.case_id for c in cases}
     outcomes: dict[str, CaseOutcome] = {}
-    for index, payload in enumerate(raw):
+    for payload in raw:
         case_id = payload.get("case_id")
-        if case_id is None and index < len(cases):
-            case_id = cases[index].case_id
         if case_id in known:
             outcomes[case_id] = comparison.outcome_from_harness(payload, case_id)
     return outcomes

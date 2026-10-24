@@ -165,6 +165,13 @@ async def repo_id(throwaway_database, monkeypatch):
             record = await import_repository(demo_fixture_id="legacy_orders")
             _STATE["repository"] = record.repository_id
             _STATE["snapshot"] = str(snapshot_path(record.repository_id))
+            # Descriptions and embeddings follow the import in the background (#28).
+            # Wait here, on the loop that started them, so every test below searches
+            # a fully indexed repository - and the job is not abandoned when this
+            # test's loop closes.
+            from app.search import pipeline
+
+            await asyncio.gather(*list(pipeline._background))
         yield _STATE["repository"]
     finally:
         await client.close()

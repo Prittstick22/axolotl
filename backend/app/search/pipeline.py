@@ -169,8 +169,14 @@ async def _enrich(repository_id: str, chunks: list[dict[str, Any]]) -> None:
     stopped: str | None = None
 
     try:
-        for start in range(0, len(chunks), ENRICH_BATCH_SIZE):
-            batch = chunks[start:start + ENRICH_BATCH_SIZE]
+        reused = await _reuse_enrichment(repository_id, chunks)
+        described = embedded = reused
+        if reused:
+            await progress.advance(repository_id, described=described, embedded=embedded)
+        pending = [c for c in chunks if not c.get("embedding")]
+
+        for start in range(0, len(pending), ENRICH_BATCH_SIZE):
+            batch = pending[start:start + ENRICH_BATCH_SIZE]
 
             if describing:
                 warnings.extend(await _describe(batch))
@@ -207,8 +213,8 @@ async def _enrich(repository_id: str, chunks: list[dict[str, Any]]) -> None:
                 warnings.append(stopped)
             await progress.finish(repository_id, progress.READY, described=described,
                                   embedded=embedded, warnings=warnings)
-        log.info("background indexing of %s: %d described, %d embedded of %d",
-                 repository_id, described, embedded, len(chunks))
+        log.info("background indexing of %s: %d described, %d embedded of %d "
+                 "(%d reused)", repository_id, described, embedded, len(chunks), reused)
     except asyncio.CancelledError:
         # Server shutting down. Best effort: the database may already be closed, and
         # if so the next reader on this host marks it failed instead.
@@ -221,6 +227,27 @@ async def _enrich(repository_id: str, chunks: list[dict[str, Any]]) -> None:
                               f"{type(exc).__name__}: {exc}")
     finally:
         progress.release(repository_id)
+
+
+async def _reuse_enrichment(repository_id: str, chunks: list[dict[str, Any]]) -> int:
+    """Fill in what Atlas already holds for identical code; returns how many (#11)."""
+    from app.search import find_enrichment, store_enrichment
+
+    try:
+        found = await find_enrichment([c["chunk_id"] for c in chunks])
+    except Exception as exc:  # noqa: BLE001 - only costs quota, never correctness
+        log.warning("could not look up earlier enrichment for %s: %s", repository_id, exc)
+        return 0
+
+    reused = [c for c in chunks if c["chunk_id"] in found]
+    for chunk in reused:
+        chunk["description"] = found[chunk["chunk_id"]]["description"]
+        chunk["embedding"] = found[chunk["chunk_id"]]["embedding"]
+    if reused:
+        await store_enrichment(repository_id, reused)
+        log.info("reused stored descriptions and embeddings for %d of %d chunk(s)",
+                 len(reused), len(chunks))
+    return len(reused)
 
 
 async def _finish_quietly(
@@ -292,8 +319,10 @@ async def _describe(chunks: list[dict[str, Any]]) -> list[str]:
 async def _embed(chunks: list[dict[str, Any]]) -> list[str]:
     from app.search.embeddings import embed_documents
 
+    failures: list[str] = []
     try:
-        vectors = await embed_documents([embedding_text(c) for c in chunks])
+        vectors = await embed_documents([embedding_text(c) for c in chunks],
+                                        failures=failures)
     except Exception as exc:  # noqa: BLE001
         log.warning("embedding chunks failed: %s", exc)
         return [f"chunk embeddings failed ({type(exc).__name__}), so vector and "
@@ -302,13 +331,15 @@ async def _embed(chunks: list[dict[str, Any]]) -> list[str]:
     for chunk, vector in zip(chunks, vectors, strict=True):
         chunk["embedding"] = vector
 
+    # The first error says why - a spent quota reads very differently from a bad key.
+    why = f" ({failures[0]})" if failures else ""
     missing = sum(1 for v in vectors if v is None)
     if missing == len(vectors):
-        return ["no chunk was embedded, so vector and hybrid search will return "
+        return [f"no chunk was embedded{why}, so vector and hybrid search will return "
                 "nothing for this repository"]
     if missing:
-        return [f"{missing} of {len(vectors)} chunk(s) could not be embedded and are "
-                f"absent from vector search"]
+        return [f"{missing} of {len(vectors)} chunk(s) could not be embedded{why} and "
+                f"are absent from vector search"]
     return []
 
 

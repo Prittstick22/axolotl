@@ -89,6 +89,13 @@ def gemini(monkeypatch) -> dict[str, Any]:
     async def searchable(repository_id, **_):
         return True
 
+    # Descriptions and embeddings already in Atlas for identical code (#11).
+    state["earlier"] = {}
+
+    async def find_enrichment(chunk_ids):
+        return {i: state["earlier"][i] for i in chunk_ids if i in state["earlier"]}
+
+    monkeypatch.setattr(search, "find_enrichment", find_enrichment)
     monkeypatch.setattr(pipeline, "_describe", describe)
     monkeypatch.setattr(pipeline, "_embed", embed)
     monkeypatch.setattr(search, "store_enrichment", store_enrichment)
@@ -208,6 +215,36 @@ async def test_descriptions_failing_does_not_stop_the_embeddings(statuses, gemin
     assert gemini["describe_calls"] == 1
     assert statuses[REPO]["state"] == "ready"
     assert (statuses[REPO]["described"], statuses[REPO]["embedded"]) == (0, 5)
+
+
+async def test_identical_code_reuses_what_atlas_already_holds(statuses, gemini,
+                                                                monkeypatch):
+    """#11: re-importing chess must not pay 244 Gemini calls for answers in Atlas."""
+    monkeypatch.setattr(pipeline, "ENRICH_BATCH_SIZE", 2)
+    gemini["earlier"] = {f"chunk_{i}": {"description": f"earlier {i}",
+                                        "embedding": [0.2] * 4} for i in range(3)}
+
+    await pipeline.schedule_enrichment(REPO, some_chunks(4))
+    await finish_background()
+
+    assert (gemini["describe_calls"], gemini["embed_calls"]) == (1, 1), \
+        "only chunk_3 went to Gemini"
+    by_id = {c["chunk_id"]: c for c in gemini["stored"]}
+    assert by_id["chunk_0"]["description"] == "earlier 0"
+    assert by_id["chunk_3"]["description"] == "what m.f3 does"
+    assert statuses[REPO]["state"] == "ready"
+    assert statuses[REPO]["embedded"] == 4
+
+
+async def test_everything_reused_means_no_gemini_call_at_all(statuses, gemini):
+    gemini["earlier"] = {f"chunk_{i}": {"description": "d", "embedding": [0.2] * 4}
+                         for i in range(3)}
+
+    await pipeline.schedule_enrichment(REPO, some_chunks(3))
+    await finish_background()
+
+    assert gemini["describe_calls"] == gemini["embed_calls"] == 0
+    assert statuses[REPO]["state"] == "ready"
 
 
 async def test_a_crash_mid_job_is_recorded_as_failed(statuses, gemini, monkeypatch):

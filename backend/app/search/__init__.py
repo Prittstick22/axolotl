@@ -34,7 +34,8 @@ from app.search.indexes import (
 
 log = logging.getLogger(__name__)
 
-__all__ = ["persist_chunks", "search_repository", "search_status", "store_enrichment"]
+__all__ = ["find_enrichment", "persist_chunks", "search_repository", "search_status",
+           "store_enrichment"]
 
 SEARCH_INDEX_NOT_READY = "SEARCH_INDEX_NOT_READY"
 # A second index of a repository already being indexed would spend the Gemini quota
@@ -74,16 +75,51 @@ async def store_enrichment(repo_id: str, chunks: list[dict[str, Any]]) -> int:
 
     if not chunks:
         return 0
+    tag = enrichment_tag()
     database = await db.get_db()
     result = await database[CHUNKS_COLLECTION].bulk_write([
         UpdateOne(
             {"repository_id": repo_id, "chunk_id": c["chunk_id"]},
             {"$set": {"description": c.get("description"),
-                      "embedding": c.get("embedding")}},
+                      "embedding": c.get("embedding"),
+                      "enriched_with": tag if c.get("embedding") else None}},
         )
         for c in chunks
     ], ordered=False)
     return result.modified_count
+
+
+def enrichment_tag() -> str:
+    """Which models produced a chunk's description and embedding, and at what size."""
+    from app.config import get_settings
+
+    s = get_settings()
+    return f"{s.gemini_model}|{s.gemini_embedding_model}:{s.embedding_dimensions}"
+
+
+async def find_enrichment(chunk_ids: list[str]) -> dict[str, dict[str, Any]]:
+    """Descriptions and embeddings already stored for these chunks, by any repository.
+
+    Quota (#11): re-importing chess on demo day would otherwise pay for 244 Gemini
+    calls to get answers Atlas already holds. A chunk id is derived from the snapshot
+    hash and the symbol, so the same id means byte-identical code; `enriched_with`
+    must also match, so a change of model or dimensions is never served stale vectors.
+    These are the models' real earlier answers for exactly this code.
+    """
+    from app.persistence import db
+
+    if not chunk_ids:
+        return {}
+    database = await db.get_db()
+    cursor = database[CHUNKS_COLLECTION].find(
+        {"chunk_id": {"$in": chunk_ids}, "enriched_with": enrichment_tag(),
+         "embedding": {"$type": "array"}, "description": {"$type": "string"}},
+        {"_id": 0, "chunk_id": 1, "description": 1, "embedding": 1},
+    )
+    found: dict[str, dict[str, Any]] = {}
+    async for row in cursor:
+        found.setdefault(row["chunk_id"], row)
+    return found
 
 
 async def count_chunks(repo_id: str) -> int:

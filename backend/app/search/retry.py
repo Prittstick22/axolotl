@@ -7,7 +7,8 @@ the demo means zero descriptions and visibly worse search.
 
 Retried: 429 (rate limited), 500, 502, 503, 504, and timeouts. Not retried: 400, 403,
 404 and anything else that says the request itself is wrong - repeating it would waste
-quota to get the same answer.
+quota to get the same answer - and a 429 for a spent *daily* quota, which no backoff
+outlasts (#11).
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+import re
 from collections.abc import Awaitable, Callable
 
 log = logging.getLogger(__name__)
@@ -30,9 +32,29 @@ RETRYABLE_TEXT = (
 )
 
 
+_RETRY_IN_HOURS = re.compile(r"retry in \d+h")
+
+
+def is_daily_quota_spent(exc: BaseException) -> bool:
+    """A 429 for the *daily* quota, which no backoff outlasts.
+
+    The real one, 23 Oct: "Quota exceeded for metric: embed_content_free_tier_requests,
+    limit: 1000, model: gemini-embedding-1.0.  Please retry in 12h14m51s". A per-minute
+    limit is also a 429 mentioning quota, but clears in seconds, so it stays retryable:
+    only a wait measured in hours, or a metric named per day, counts as spent.
+    """
+    text = str(exc).lower()
+    if "quota" not in text:
+        return False
+    return bool(_RETRY_IN_HOURS.search(text)) or "per day" in text or "perday" in text
+
+
 def is_retryable(exc: BaseException) -> bool:
     if isinstance(exc, asyncio.TimeoutError | TimeoutError):
         return True
+    # Each retry is another request against a quota that is already gone (#11).
+    if is_daily_quota_spent(exc):
+        return False
 
     code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
     if isinstance(code, int) and code in RETRYABLE_CODES:

@@ -204,7 +204,7 @@ export function getRunUnit(runId: string, unitId: string): Promise<UnitDetail> {
   return apiFetch<UnitDetail>(`${run(runId)}/units/${encodeURIComponent(unitId)}`);
 }
 
-/** GET /api/v1/runs/{run_id}/diff?unit_id= - baseline against an accepted revision, the unit's files only. */
-export function getRunDiff(runId: string, unitId: string): Promise<RunDiff> {
-  return apiFetch<RunDiff>(`${run(runId)}/diff?unit_id=${encodeURIComponent(unitId)}`);
+/** GET /api/v1/runs/{run_id}/diff?unit_id= - baseline against an accepted revision: the unit's files, or with no unit every changed file. */
+export function getRunDiff(runId: string, unitId?: string): Promise<RunDiff> {
+  return apiFetch<RunDiff>(`${run(runId)}/diff${unitId ? `?unit_id=${encodeURIComponent(unitId)}` : ''}`);
 }

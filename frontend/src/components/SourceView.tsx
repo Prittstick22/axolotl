@@ -86,7 +86,7 @@ const OPTIONS = {
 const loading = <span className="p-3 text-sm text-muted-foreground">Loading the editor…</span>;
 
 /** Baseline against the accepted revision, inline as in the template, with unchanged stretches folded away. */
-export function DiffView({ original, modified, path }: { original: string; modified: string; path: string }) {
+export function DiffView({ original, modified, path, sideBySide = false }: { original: string; modified: string; path: string; sideBySide?: boolean }) {
   const editor = useRef<monaco.editor.IStandaloneDiffEditor>(null);
   useTheme();
   // The library disposes the models before the editor, which Monaco reports as an error. So it keeps
@@ -116,7 +116,9 @@ export function DiffView({ original, modified, path }: { original: string; modif
       options={{
         ...OPTIONS,
         originalEditable: false,
-        renderSideBySide: false,
+        renderSideBySide: sideBySide,
+        // Monaco would quietly switch to inline below 900 px, which a 1024 px screen with a file list is.
+        useInlineViewWhenSpaceIsLimited: false,
         // Room for the +/− column between the line numbers and the code, as in the template.
         lineDecorationsWidth: 20,
         renderOverviewRuler: false,

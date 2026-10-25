@@ -219,9 +219,10 @@ icons and IBM Plex, following the template in [`design/`](design/).
   structured planning).
 - **A full chess migration**: run `run_70e126c3acf2`, 24 Oct, ended `completed` across
   all 14 units of the chess fixture against `gemini-4-argon`. Argon's responses are
-  recorded in `demo/replays/run_70e126c3acf2.json` on `demo/argon-replay`, which
-  replays the run without calling Gemini. The recording holds the model's side only,
-  so the gates are re-run for real on every replay.
+  recorded in the demo build, a separate repository ([Prittstick22/axolotl-demo](https://github.com/Prittstick22/axolotl-demo)) that is never merged
+  here, which replays a run without calling Gemini. It now replays a later live run,
+  `run_c86aff1bea77` (25 Oct, 14/14 in 15 minutes). The recording holds the model's side
+  only, so the gates are re-run for real on every replay.
 - **Agent patches through the verifier**: earlier, in run `run_bb0da2e79534` on Atlas
   Local, Argon's patches for `customers.py` and `pricing.py` passed verification. That
   run ended `completed_with_warnings` at 2 of 6 units, and the chess run above
@@ -245,7 +246,7 @@ icons and IBM Plex, following the template in [`design/`](design/).
 
 - **No cold-start reproduction yet.** A live chess run reached a verdict on 24 Oct —
   `run_70e126c3acf2`, `completed` across 14 units against `gemini-4-argon`, recorded
-  for replay on `demo/argon-replay` ([#4](https://github.com/Prittstick22/axolotl/issues/4)). What has not happened is someone
+  for replay in [Prittstick22/axolotl-demo](https://github.com/Prittstick22/axolotl-demo) ([#4](https://github.com/Prittstick22/axolotl/issues/4)). What has not happened is someone
   starting from a fresh clone with only the README and reproducing it ([#7](https://github.com/Prittstick22/axolotl/issues/7)).
 - A cold start needs five Docker images built, which the README now lists. It used to
   say only "Docker running", so anyone following it got no images, a runner chip

@@ -2027,3 +2027,13 @@ ran past the 120 s request timeout. The unit was blocked and `__main__` was skip
 while every other unit passed first time. Normal turns take 15-70 s, so the limit was
 too tight for a long patch. `REQUEST_TIMEOUT_SECONDS` is now 240. A timeout is still not
 retried (#47): the call may have been charged, and a retry would double the wait.
+
+## 25 Oct 2026 — Dev 1: the demo build is its own repository
+
+The demo build (the product plus a replay mode, #138) moved from the `demo/argon-replay`
+branch to its own repository,
+[Prittstick22/axolotl-demo](https://github.com/Prittstick22/axolotl-demo). It's public
+and not a fork, so GitHub can't open a pull request from it into this repository, and the
+branch is deleted here. Its README says it must never be merged into the product. The
+README's and IMPLEMENTATION's three mentions of the branch now point to the repository,
+and say the demo replays the 25 Oct run `run_c86aff1bea77`.

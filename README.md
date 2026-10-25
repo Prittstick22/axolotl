@@ -211,7 +211,7 @@ the gotchas behind them.
 | Workspaces, patches, differential verifier | ✅ *(Dev 4)* |
 | Agent adapter, prompts, tools | ✅ *(Dev 1)* — `propose_plan`, `run_unit_session`, `narrate_report`, all three against `gemini-4-argon` |
 | Chess (Python 2.7 → 3.14) can be planned and verified | ✅ — dual-runtime sandbox ([#22](https://github.com/Prittstick22/axolotl/issues/22)), chess behaviour cases ([#23](https://github.com/Prittstick22/axolotl/issues/23)), `python2_to_3` supported ([#21](https://github.com/Prittstick22/axolotl/issues/21)) |
-| A chess run that reaches a verdict | ✅ — `run_70e126c3acf2`, 24 Oct: `completed` across 14 units against `gemini-4-argon` ([#4](https://github.com/Prittstick22/axolotl/issues/4)). Recorded for replay on `demo/argon-replay`, so a laptop with no Gemini key can still show it |
+| A chess run that reaches a verdict | ✅ — `run_70e126c3acf2`, 24 Oct: `completed` across 14 units against `gemini-4-argon` ([#4](https://github.com/Prittstick22/axolotl/issues/4)). The demo build, a separate repository ([Prittstick22/axolotl-demo](https://github.com/Prittstick22/axolotl-demo)) that is never merged here, replays a later live run, `run_c86aff1bea77` (25 Oct, 14/14 in 15 minutes), so a laptop with no Gemini key can still show it |
 
 827 offline backend tests, 25 in real sandbox containers, 56 live tests against the
 real Atlas cluster and Gemini behind `-m live`, and 20 frontend tests. A plain

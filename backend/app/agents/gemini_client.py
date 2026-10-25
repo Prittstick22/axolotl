@@ -15,7 +15,10 @@ from app.config import get_settings
 # (`_without_sdk_retries`): they slept on a 429 without reading the error's
 # `retryDelay`, and on a daily quota they outlasted the timeout below, so the real
 # error was lost behind a TimeoutError.
-REQUEST_TIMEOUT_SECONDS = 120
+# 240, not 120: on 25 Oct one Argon turn on `cli.py`, the largest chess module, took
+# longer than 120 s and blocked the unit (`run_a6435773b085`); normal turns take 15-70 s.
+# Still not retried: a timed-out call may have been charged, and a retry doubles the wait.
+REQUEST_TIMEOUT_SECONDS = 240
 # A per-minute quota resets within a minute. A 429 asking for longer than this is a
 # daily quota: waiting would stall the run for hours, so it fails at once and says so.
 RATE_LIMIT_WAIT_SECONDS = 90

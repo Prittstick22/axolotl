@@ -33,7 +33,7 @@ and generation configuration because these settings are interaction-scoped.
 - Model: `GEMINI_MODEL`, with no silent model fallback.
 - Thinking: `GEMINI_THINKING_LEVEL` initially; `high` during repair diagnosis.
 - No `temperature`, `top_p`, `top_k`, `thinking_budget` or `cached_content` is sent.
-- Each request has a 120-second timeout. Rate limits receive at most four adapter
+- Each request has a 240-second timeout. Rate limits receive at most four adapter
   attempts with 1, 2 and 4 second backoffs. Other failures surface immediately.
 - Missing credentials or failed/incomplete interactions raise `ModelUnavailable`.
   Unit sessions translate failures into an error outcome, never a successful verdict.

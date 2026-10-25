@@ -2019,3 +2019,11 @@ cluster is rebuilt under the same id afterwards.
 
 981 offline backend tests (16 new; decoding from the id again fails 5 of them), 25
 sandbox tests, ruff clean.
+
+## 25 Oct 2026 — Dev 1: Argon requests time out after 240 s, not 120 s
+
+On `run_a6435773b085` one Argon turn on `local_chess/cli.py`, the largest chess module,
+ran past the 120 s request timeout. The unit was blocked and `__main__` was skipped,
+while every other unit passed first time. Normal turns take 15-70 s, so the limit was
+too tight for a long patch. `REQUEST_TIMEOUT_SECONDS` is now 240. A timeout is still not
+retried (#47): the call may have been charged, and a retry would double the wait.

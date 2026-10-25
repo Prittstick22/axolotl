@@ -130,7 +130,7 @@ in-memory fallback.
 `app/agents/` (see [`argon-agent.md`](argon-agent.md)):
 
 - `gemini_client.py`: isolates the `google-genai` Interactions API, chains
-  `previous_interaction_id`, applies a 120 s timeout and bounded backoff on rate limits.
+  `previous_interaction_id`, applies a 240 s timeout and bounded backoff on rate limits.
   The model comes from `GEMINI_MODEL` with no silent fallback.
 - `propose_plan`: structured `submit_plan` call, validated for membership, uniqueness and
   dependency order.
